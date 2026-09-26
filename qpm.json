@@ -15,8 +15,7 @@
   "workspace": {
     "qmodIncludeDirs": [],
     "qmodIncludeFiles": [],
-    "qmodOutput": null,
-    "ndk": "^29.0.14206865"
+    "qmodOutput": null
   },
   "dependencies": [
     {
