@@ -99,9 +99,13 @@ install → "Mod install" → pick the `.qmod` file.
 
 `.github/workflows/build.yml` runs the host tests on every push, then
 attempts this same NDK+QPM build in CI so you get a downloadable `.qmod`
-artifact automatically. That job is expected to need iteration the first
-time — see its comments for the most likely failure point (an unpinned
-`bs-cordl` version in `qpm.json`).
+artifact automatically. `qpm.json` leaves every dependency's version
+unconstrained (`"*"`) so QPM's resolver can pick a mutually-compatible set
+on its own — every dependency *except* `bs-cordl` tracks the modloader
+ecosystem, not the game, so there's normally nothing to pin there. Only
+`bs-cordl` encodes an actual Beat Saber version; leaving it at `"*"` gets
+you the newest headers available, which may not match the game version you
+actually have installed — pin it once you know that version (see below).
 
 ### Things you'll need to fill in before this does anything in-game
 
