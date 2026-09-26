@@ -21,7 +21,9 @@
     {
       "id": "beatsaber-hook",
       "versionRange": "*",
-      "additionalData": {}
+      "additionalData": {
+        "extraFiles": ["shared/inline-hook"]
+      }
     },
     {
       "id": "custom-types",
