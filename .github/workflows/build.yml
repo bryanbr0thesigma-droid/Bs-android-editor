@@ -63,12 +63,20 @@ jobs:
 
       - name: Debug - inspect restored dependency layout
         run: |
-          echo "=== extern/ top-level ==="
-          ls -la extern || true
-          echo "=== extern/ directories (depth 4) ==="
-          find extern -maxdepth 4 -type d | sort || true
-          echo "=== locating logging.hpp ==="
-          find extern -iname "logging.hpp" || true
+          echo "=== resolved dependency versions (qpm.shared.json) ==="
+          cat qpm.shared.json 2>/dev/null | grep -E '"id"|"version"' || true
+          echo "=== full tree: beatsaber-hook ==="
+          find extern/includes/beatsaber-hook -type f | sort
+          echo "=== full tree: custom-types ==="
+          find extern/includes/custom-types -type f | sort
+          echo "=== full tree: scotland2 ==="
+          find extern/includes/scotland2 -type f | sort
+          echo "=== full tree: paper2_scotland2 ==="
+          find extern/includes/paper2_scotland2 -type f | sort
+          echo "=== bsml tree (depth 5) ==="
+          find extern/includes/bsml -maxdepth 5 | sort
+          echo "=== bs-cordl top levels (depth 3) ==="
+          find extern/includes/bs-cordl -maxdepth 3 -type d | sort
 
       - name: Build native library
         env:
