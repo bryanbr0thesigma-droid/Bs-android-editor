@@ -32,17 +32,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # NDK version confirmed from QuestPackageManager/beatsaber-hook's own
-      # qpm.json (workspace.ndk: "^29.0.14206865") at the 8.2.1 tag this
-      # project currently resolves to — beatsaber-hook's headers use
-      # <android/log_macros.h>, which doesn't exist in older NDKs (r26 and
-      # earlier), hence the exact pin here rather than a guess.
-      - name: Install Android NDK
+      # beatsaber-hook 8.2.1 needs NDK ^29.0.14206865 (its own qpm.json;
+      # <android/log_macros.h>, which its headers use, doesn't exist in
+      # older NDKs). nttld/setup-ndk@v1 doesn't have that exact build in
+      # its download manifest (404), and beatsaber-hook's own default CI
+      # path doesn't pin an NDK via any action either — it just uses
+      # whatever ubuntu-latest ships with, which GitHub keeps reasonably
+      # current. Do the same, and fail loudly with the actual version if
+      # it turns out to be too old rather than guess a download URL.
+      - name: Locate Android NDK
         id: setup-ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: 29.0.14206865
-          add-to-path: false
+        run: |
+          NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}"
+          if [[ -z "${NDK_PATH}" || ! -d "${NDK_PATH}" ]]; then
+            echo "::error::No Android NDK found on this runner (checked ANDROID_NDK_HOME, ANDROID_NDK_LATEST_HOME)" >&2
+            exit 1
+          fi
+          echo "Using NDK at ${NDK_PATH}:"
+          cat "${NDK_PATH}/source.properties" || true
+          echo "ndk-path=${NDK_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Install QPM CLI
         # Asset name confirmed from QuestPackageManager/QPM.CLI's own
