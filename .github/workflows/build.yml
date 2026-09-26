@@ -61,6 +61,15 @@ jobs:
       - name: Restore dependencies
         run: qpm restore
 
+      - name: Debug - inspect restored dependency layout
+        run: |
+          echo "=== extern/ top-level ==="
+          ls -la extern || true
+          echo "=== extern/ directories (depth 4) ==="
+          find extern -maxdepth 4 -type d | sort || true
+          echo "=== locating logging.hpp ==="
+          find extern -iname "logging.hpp" || true
+
       - name: Build native library
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
