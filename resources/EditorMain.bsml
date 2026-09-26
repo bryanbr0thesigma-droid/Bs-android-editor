@@ -1,0 +1,24 @@
+<!--
+  Layout for the "Map Editor" menu screen: pick an existing custom level (via
+  SongCore) or start a new blank map, then jump into the in-headset editor.
+
+  This mirrors the standard BSML tag/attribute set (vertical/horizontal
+  containers, <list>, <button on-click=...>) which has been stable across
+  BSML versions; kept as the readable source of truth. It is currently also
+  inlined as a raw string in src/UI/EditorViewController.cpp so the mod
+  builds without an extra asset-embedding step — if you'd rather load this
+  file at runtime/build time (e.g. via qpm's qmodIncludeFiles + your own
+  asset-embedding step), wire that up and drop the inline copy.
+-->
+<vertical child-control-height="false" child-expand-height="false" spacing="1">
+  <horizontal pad="1">
+    <text text="Map Editor" align="Center" font-size="6"/>
+  </horizontal>
+
+  <list id="song-list" select-cell="song-selected" expand-cell="true" list-width="90"/>
+
+  <horizontal pad="2" spacing="2">
+    <button text="New Blank Map" on-click="new-blank-map-clicked"/>
+    <button text="Edit Selected" id="edit-button" interactable="false" on-click="edit-selected-clicked"/>
+  </horizontal>
+</vertical>

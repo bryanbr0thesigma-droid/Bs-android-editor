@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Lauriethefish/QuestPatcher.QMod/main/QuestPatcher.QMod/Resources/qmod.schema.json",
+  "_QPVersion": "0.1.1",
+  "name": "BS Android Editor",
+  "id": "${mod_id}",
+  "author": "REPLACE_WITH_YOUR_NAME",
+  "porter": "",
+  "version": "${version}",
+  "packageId": "com.beatgames.beatsaber",
+  "packageVersion": "REPLACE_WITH_YOUR_BEAT_SABER_VERSION",
+  "description": "Adds an in-headset beatmap editor to Beat Saber: place notes, bombs, walls and lighting events without leaving VR, then save straight to a playable custom level.",
+  "coverImage": "cover.png",
+  "isLibrary": false,
+  "modFiles": [
+    "${so_name}"
+  ],
+  "libraryFiles": [],
+  "fileCopies": [],
+  "copyExtensions": [],
+  "dependencies": []
+}

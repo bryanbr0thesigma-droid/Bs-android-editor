@@ -1,0 +1,75 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Core library tests (host, no NDK required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build-tests -- -j"$(nproc)"
+
+      - name: Run tests
+        run: ctest --test-dir build-tests --output-on-failure
+
+  build-qmod:
+    name: Build .qmod (Quest, arm64-v8a)
+    runs-on: ubuntu-latest
+    needs: host-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      # This job cross-compiles the real native mod and packages a real
+      # .qmod using your qpm.json/mod.template.json. It's expected to need
+      # iteration: bs-cordl must be pinned (in qpm.json) to a version that
+      # matches the Beat Saber build you're targeting, or dependency
+      # resolution here will fail or pull mismatched headers. See README.md.
+      - name: Install Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          add-to-path: false
+
+      - name: Install QPM CLI
+        run: |
+          curl -L "https://github.com/QuestPackageManager/QPM.CLI/releases/latest/download/qpm-rust-linux" -o qpm
+          chmod +x qpm
+          sudo mv qpm /usr/local/bin/qpm
+          qpm --version
+
+      - name: Restore dependencies
+        run: qpm restore
+
+      - name: Build native library
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: ./build.sh
+
+      - name: Package .qmod
+        run: |
+          # NOTE: qpm-rust's qmod-packaging subcommand has been renamed
+          # before; if this fails with "unrecognized subcommand", run
+          # `qpm --help` in the log and adjust (see README.md).
+          qpm qmod build
+
+      - name: Upload .qmod artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bs-android-editor-qmod
+          path: "*.qmod"
+          if-no-files-found: error

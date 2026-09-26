@@ -1,0 +1,57 @@
+{
+  "version": "0.4.0",
+  "sharedDir": "include",
+  "dependenciesDir": "extern",
+  "info": {
+    "name": "BSAndroidEditor",
+    "id": "bs-android-editor",
+    "version": "0.1.0",
+    "url": null,
+    "additionalData": {
+      "overrideSoName": "libbs-android-editor.so",
+      "cmake": true
+    }
+  },
+  "workspace": {
+    "qmodIncludeDirs": [],
+    "qmodIncludeFiles": [],
+    "qmodOutput": null,
+    "ndk": ""
+  },
+  "dependencies": [
+    {
+      "id": "beatsaber-hook",
+      "versionRange": "^6.0.0",
+      "additionalData": {}
+    },
+    {
+      "id": "custom-types",
+      "versionRange": "^0.17.0",
+      "additionalData": {}
+    },
+    {
+      "id": "bs-cordl",
+      "versionRange": "*",
+      "additionalData": {
+        "private": false
+      }
+    },
+    {
+      "id": "bsml",
+      "versionRange": "^0.4.0",
+      "additionalData": {}
+    },
+    {
+      "id": "scotland2",
+      "versionRange": "^0.1.0",
+      "additionalData": {
+        "includeQmod": false
+      }
+    },
+    {
+      "id": "paper2_scotland2",
+      "versionRange": "^4.0.0",
+      "additionalData": {}
+    }
+  ]
+}
