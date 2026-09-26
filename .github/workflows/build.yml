@@ -63,20 +63,28 @@ jobs:
 
       - name: Debug - inspect restored dependency layout
         run: |
-          echo "=== resolved dependency versions (qpm.shared.json) ==="
-          cat qpm.shared.json 2>/dev/null | grep -E '"id"|"version"' || true
-          echo "=== full tree: beatsaber-hook ==="
-          find extern/includes/beatsaber-hook -type f | sort
-          echo "=== full tree: custom-types ==="
-          find extern/includes/custom-types -type f | sort
-          echo "=== full tree: scotland2 ==="
-          find extern/includes/scotland2 -type f | sort
-          echo "=== full tree: paper2_scotland2 ==="
-          find extern/includes/paper2_scotland2 -type f | sort
-          echo "=== bsml tree (depth 5) ==="
-          find extern/includes/bsml -maxdepth 5 | sort
-          echo "=== bs-cordl top levels (depth 3) ==="
-          find extern/includes/bs-cordl -maxdepth 3 -type d | sort
+          echo "=== extern/includes listing (types/symlinks visible) ==="
+          ls -la extern/includes/
+          echo "=== per-dependency stat + listing ==="
+          for d in beatsaber-hook custom-types bsml scotland2 paper2_scotland2 bs-cordl; do
+            echo "--- $d ---"
+            stat "extern/includes/$d" || true
+            ls -la "extern/includes/$d" || true
+          done
+          echo "=== any symlinks anywhere under extern? ==="
+          find extern -type l -exec ls -la {} \; || true
+          echo "=== total file count under extern ==="
+          find extern -type f | wc -l
+          echo "=== disk usage of extern ==="
+          du -sh extern 2>/dev/null || true
+          echo "=== does the QPM cache itself have real headers for beatsaber-hook 8.2.1? ==="
+          find "$HOME/.local/share/QPM-RS/cache/beatsaber-hook/8.2.1" -maxdepth 3 2>/dev/null | sort || true
+          find "$HOME/.local/share/QPM-RS/cache/beatsaber-hook/8.2.1" -iname "logging.hpp" 2>/dev/null || true
+          echo "=== any generated qpm/cmake integration files? ==="
+          find . -maxdepth 2 -iname "*.cmake" -not -path "./build/*" || true
+          find extern -maxdepth 2 -iname "*.cmake" || true
+          echo "=== qpm version in use ==="
+          qpm --version
 
       - name: Build native library
         env:
