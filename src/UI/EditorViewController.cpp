@@ -2,6 +2,8 @@
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
 
+#include "bsml/shared/BSML/Parsing/BSMLParser.hpp"
+
 DEFINE_TYPE(BSAndroidEditor, EditorViewController);
 
 using namespace BSAndroidEditor;
@@ -25,8 +27,10 @@ constexpr auto kEditorMainLayout = R"bsml(
 
 } // namespace
 
-StringW EditorViewController::get_Content() {
-    return kEditorMainLayout;
+void EditorViewController::DidActivate(bool firstActivation, bool /*addedToHierarchy*/,
+                                        bool /*screenSystemEnabling*/) {
+    if (!firstActivation) return;
+    BSML::BSMLParser::parse_and_construct(kEditorMainLayout, get_transform(), this);
 }
 
 void EditorViewController::OnSongSelected(HMUI::TableView* /*tableView*/, int index) {

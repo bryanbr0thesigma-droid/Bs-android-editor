@@ -3,12 +3,12 @@
 // The flow coordinator presented over the main menu when "Map Editor" is
 // clicked; owns the (currently single-screen) editor menu flow.
 //
-// Unlike EditorViewController (which derives from BSML's own
-// BSMLViewController convenience base and must NOT re-override
-// DidActivate — see that header's comment), this class derives directly
-// from the game's own HMUI::FlowCoordinator codegen class, so overriding
-// DidActivate here is the correct, standard direct-override pattern (the
-// same one BSMLViewController itself uses against HMUI::ViewController).
+// Derives directly from the game's own HMUI::FlowCoordinator codegen
+// class and overrides DidActivate itself — the same direct-override
+// pattern EditorViewController now also uses against HMUI::ViewController
+// (bsml 0.4.55, the version resolved for this project's Beat Saber
+// 1.40.8_7379 target, has no BSMLViewController convenience base; see
+// EditorViewController.hpp's comment).
 //
 // DECLARE_CLASS_CODEGEN(ns, name, base) expands to a class HEADER only —
 // the body must follow as an ordinary `{ ... };` block — and needs a

@@ -45,13 +45,25 @@ published version fits — the BSMG modding docs cover that).
 
 Pinning `bs-cordl` to an older game version like this also pulls in
 whatever older `beatsaber-hook`/`bsml`/`custom-types`/`scotland2` versions
-were current for that build — potentially a different API shape than
-what's documented as verified in the "Things you'll need to fill in"
-section below, which was checked against the newer versions `qpm restore`
-resolved before this pin. Re-verify the same way (their `shared/` headers
-are plain text) if `qpm restore`'s dependency resolution log shows
-different major versions than beatsaber-hook 8.2.1 / bsml 0.5.8 /
-custom-types 0.20.1 / scotland2 0.1.7 / paper2_scotland2 4.8.0.
+were current for that build — a genuinely different API shape in a couple
+of places, not just a version bump. For 1.40.8_7379, `qpm restore`
+currently resolves beatsaber-hook 6.4.2 / bsml 0.4.55 / custom-types 0.18.4
+/ scotland2 0.1.7 / paper2_scotland2 4.8.0, and every hook/UI file in this
+repo has been re-verified against that exact set (not the newer
+beatsaber-hook 8.2.1 / bsml 0.5.8 / custom-types 0.20.1 set an earlier pass
+checked before this pin). The two differences that actually mattered:
+beatsaber-hook 6.4.2 keeps its headers under a `shared/utils/` subfolder
+(e.g. `beatsaber-hook/shared/utils/hooking.hpp`, `.../il2cpp-functions.hpp`
+with `il2cpp_functions::Init()`) instead of the flat `shared/*.hpp` layout
+8.2.1 moved to; and bsml 0.4.55 has no `BSML::BSMLViewController`
+convenience base at all, so `EditorViewController` derives directly from
+`HMUI::ViewController` and calls
+`BSML::BSMLParser::parse_and_construct(str, parent, host)` by hand from its
+own `DidActivate` override — the same pattern bsml's own
+`BSML::MenuButtonsViewController` uses internally at this version. If a
+future `qpm restore` resolves yet another set, re-verify the same way
+(their `shared/` headers are plain text — grep them for the class/macro
+you're about to call).
 
 ## Repo layout
 

@@ -2,8 +2,13 @@
 // plus keeping the game's own audio playback in sync with the editor's
 // playhead (play/pause/scrub).
 //
-// Verified against bs-cordl 4500.1.0 (GlobalNamespace::VRController,
-// GlobalNamespace::AudioTimeSyncController) and UnityEngine::Time. Unlike
+// Verified against bs-cordl 4008.0.0 (Beat Saber 1.40.8_7379,
+// GlobalNamespace::VRController, GlobalNamespace::AudioTimeSyncController)
+// and UnityEngine::Time — identical API surface to the newer bs-cordl
+// 4500.1.0 originally checked, so only the beatsaber-hook 6.4.2 include
+// path below (shared/utils/hooking.hpp, not the flat shared/hooking.hpp
+// used from beatsaber-hook ~7.x+) needed updating for this game version.
+// Unlike
 // an earlier draft of this file, this does NOT use UnityEngine::XR::
 // InputDevice/CommonUsages: that codegen dump has no TryGetFeatureValue on
 // InputDevice at all (likely stripped as an unused generic method), so
@@ -19,7 +24,7 @@
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
 
-#include "beatsaber-hook/shared/hooking.hpp"
+#include "beatsaber-hook/shared/utils/hooking.hpp"
 
 #include "GlobalNamespace/AudioTimeSyncController.hpp"
 #include "GlobalNamespace/VRController.hpp"
