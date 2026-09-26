@@ -7,7 +7,7 @@
   "porter": "",
   "version": "${version}",
   "packageId": "com.beatgames.beatsaber",
-  "packageVersion": "REPLACE_WITH_YOUR_BEAT_SABER_VERSION",
+  "packageVersion": "1.40.8_7379",
   "description": "Adds an in-headset beatmap editor to Beat Saber: place notes, bombs, walls and lighting events without leaving VR, then save straight to a playable custom level.",
   "coverImage": "cover.png",
   "isLibrary": false,

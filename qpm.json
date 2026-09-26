@@ -30,7 +30,7 @@
     },
     {
       "id": "bs-cordl",
-      "versionRange": "*",
+      "versionRange": "^4008.0.0",
       "additionalData": {
         "private": false
       }

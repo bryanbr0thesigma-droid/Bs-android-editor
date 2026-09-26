@@ -34,12 +34,24 @@ This repo is two things, verified to different degrees:
 
 An earlier version of this README overstated how hard this part is: `qpm
 restore` fetches `bs-cordl` from QPM's package registry like any other
-dependency (currently resolving to `4500.1.0`, which targets a specific,
-recent Beat Saber build) — you don't need to dump your own headers unless
-you're targeting a *different* game version than whatever `bs-cordl`
-version resolves. If your installed Beat Saber build doesn't match, pin
-`bs-cordl` in `qpm.json` to a version generated for yours (the BSMG modding
-docs cover dumping your own via QuestPatcher if no published version fits).
+dependency — you don't need to dump your own headers as long as someone's
+already published a matching version. This project targets **Beat Saber
+1.40.8_7379**, pinned in `qpm.json` as `bs-cordl: ^4008.0.0` (bs-cordl tags
+its releases by game version: `1.MM.PP` → `v(MM)(0)(PP)`, e.g. `1.45.0` →
+`v4500.0.0`, confirmed against bs-cordl's own GitHub releases — `v4008.0.0`
+is tagged "Update for 1.40.8_7379"). If you're targeting a different game
+version, change that pin to match (or dump your own via QuestPatcher if no
+published version fits — the BSMG modding docs cover that).
+
+Pinning `bs-cordl` to an older game version like this also pulls in
+whatever older `beatsaber-hook`/`bsml`/`custom-types`/`scotland2` versions
+were current for that build — potentially a different API shape than
+what's documented as verified in the "Things you'll need to fill in"
+section below, which was checked against the newer versions `qpm restore`
+resolved before this pin. Re-verify the same way (their `shared/` headers
+are plain text) if `qpm restore`'s dependency resolution log shows
+different major versions than beatsaber-hook 8.2.1 / bsml 0.5.8 /
+custom-types 0.20.1 / scotland2 0.1.7 / paper2_scotland2 4.8.0.
 
 ## Repo layout
 
@@ -78,12 +90,18 @@ deleting the nearest object).
 
 You'll need, on your own machine (not in this sandbox):
 
-1. **Android NDK** (r26 or newer) — set `ANDROID_NDK_HOME`.
+1. **Android NDK.** Check what version `bs-cordl` (or whatever it depends
+   on, like `beatsaber-hook`) actually needs by reading its `qpm.json`'s
+   `workspace.ndk` field — the exact NDK build that field names often isn't
+   in `nttld/setup-ndk`'s download manifest, so the CI workflow here just
+   uses whatever NDK the runner ships with instead (see its comments).
+   Set `ANDROID_NDK_HOME` to yours.
 2. **qpm-rust** (Quest Package Manager CLI) — install from
    [QuestPackageManager/QPM.CLI](https://github.com/QuestPackageManager/QPM.CLI).
-3. Only if `bs-cordl`'s default resolved version doesn't match your
-   installed Beat Saber build: **QuestPatcher** with your own copy of the
-   game, to dump matching headers (see above).
+3. Only if you're targeting a Beat Saber version other than 1.40.8_7379
+   (this repo's current `bs-cordl` pin) and no published `bs-cordl`
+   release matches it: **QuestPatcher** with your own copy of the game, to
+   dump matching headers.
 
 Then:
 
