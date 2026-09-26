@@ -77,3 +77,10 @@ file(GLOB bs_hook_inline_hook_sources
     ${EXTERN_DIR}/includes/beatsaber-hook/shared/inline-hook/*.c
 )
 target_sources(${COMPILE_ID} PRIVATE ${bs_hook_inline_hook_sources})
+
+# And64InlineHook.cpp calls __android_log_print (<android/log.h>) directly;
+# beatsaber-hook's own CMakeLists.txt links this same way for its internal
+# build (target_link_libraries(... PRIVATE -llog)) - extern.cmake only
+# links extern/libs/*.so|*.a, not NDK system libraries, so this needs to
+# be added here too now that we compile this file ourselves.
+target_link_libraries(${COMPILE_ID} PRIVATE -llog)
