@@ -32,16 +32,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # This job cross-compiles the real native mod and packages a real
-      # .qmod using your qpm.json/mod.template.json. It's expected to need
-      # iteration: bs-cordl must be pinned (in qpm.json) to a version that
-      # matches the Beat Saber build you're targeting, or dependency
-      # resolution here will fail or pull mismatched headers. See README.md.
+      # NDK version confirmed from QuestPackageManager/beatsaber-hook's own
+      # qpm.json (workspace.ndk: "^29.0.14206865") at the 8.2.1 tag this
+      # project currently resolves to — beatsaber-hook's headers use
+      # <android/log_macros.h>, which doesn't exist in older NDKs (r26 and
+      # earlier), hence the exact pin here rather than a guess.
       - name: Install Android NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          ndk-version: 29.0.14206865
           add-to-path: false
 
       - name: Install QPM CLI
