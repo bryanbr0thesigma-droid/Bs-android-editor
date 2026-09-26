@@ -9,16 +9,21 @@
   builds without an extra asset-embedding step — if you'd rather load this
   file at runtime/build time (e.g. via qpm's qmodIncludeFiles + your own
   asset-embedding step), wire that up and drop the inline copy.
+
+  on-click/select-cell values must exactly match a DECLARE_INSTANCE_METHOD
+  name on EditorViewController: BSML resolves them by name (and arg count)
+  via IL2CPP reflection at runtime (see BSML::BSMLAction::MakeAction), not
+  by any compile-time check, so a typo here fails silently at runtime.
 -->
 <vertical child-control-height="false" child-expand-height="false" spacing="1">
   <horizontal pad="1">
     <text text="Map Editor" align="Center" font-size="6"/>
   </horizontal>
 
-  <list id="song-list" select-cell="song-selected" expand-cell="true" list-width="90"/>
+  <list id="song-list" select-cell="OnSongSelected" expand-cell="true" list-width="90"/>
 
   <horizontal pad="2" spacing="2">
-    <button text="New Blank Map" on-click="new-blank-map-clicked"/>
-    <button text="Edit Selected" id="edit-button" interactable="false" on-click="edit-selected-clicked"/>
+    <button text="New Blank Map" on-click="OnNewBlankMapClicked"/>
+    <button text="Edit Selected" id="edit-button" interactable="false" on-click="OnEditSelectedClicked"/>
   </horizontal>
 </vertical>

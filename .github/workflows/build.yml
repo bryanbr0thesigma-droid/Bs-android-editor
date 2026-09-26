@@ -61,31 +61,6 @@ jobs:
       - name: Restore dependencies
         run: qpm restore
 
-      - name: Debug - inspect restored dependency layout
-        run: |
-          echo "=== extern/includes listing (types/symlinks visible) ==="
-          ls -la extern/includes/
-          echo "=== per-dependency stat + listing ==="
-          for d in beatsaber-hook custom-types bsml scotland2 paper2_scotland2 bs-cordl; do
-            echo "--- $d ---"
-            stat "extern/includes/$d" || true
-            ls -la "extern/includes/$d" || true
-          done
-          echo "=== any symlinks anywhere under extern? ==="
-          find extern -type l -exec ls -la {} \; || true
-          echo "=== total file count under extern ==="
-          find extern -type f | wc -l
-          echo "=== disk usage of extern ==="
-          du -sh extern 2>/dev/null || true
-          echo "=== does the QPM cache itself have real headers for beatsaber-hook 8.2.1? ==="
-          find "$HOME/.local/share/QPM-RS/cache/beatsaber-hook/8.2.1" -maxdepth 3 2>/dev/null | sort || true
-          find "$HOME/.local/share/QPM-RS/cache/beatsaber-hook/8.2.1" -iname "logging.hpp" 2>/dev/null || true
-          echo "=== any generated qpm/cmake integration files? ==="
-          find . -maxdepth 2 -iname "*.cmake" -not -path "./build/*" || true
-          find extern -maxdepth 2 -iname "*.cmake" || true
-          echo "=== qpm version in use ==="
-          qpm --version
-
       - name: Build native library
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -93,11 +68,12 @@ jobs:
         run: ./build.sh
 
       - name: Package .qmod
-        run: |
-          # NOTE: qpm-rust's qmod-packaging subcommand has been renamed
-          # before; if this fails with "unrecognized subcommand", run
-          # `qpm --help` in the log and adjust (see README.md).
-          qpm qmod build
+        # Confirmed from QuestPackageManager/qpm.cli's own source
+        # (src/commands/qmod/mod.rs): `qpm qmod build` is a deprecated
+        # alias for `qpm qmod manifest`, which only regenerates mod.json —
+        # it does NOT produce a .qmod file. `qpm qmod zip` is the actual
+        # packaging command (it regenerates the manifest internally too).
+        run: qpm qmod zip
 
       - name: Upload .qmod artifact
         uses: actions/upload-artifact@v4

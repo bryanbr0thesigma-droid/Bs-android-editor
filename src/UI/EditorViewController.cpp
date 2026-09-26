@@ -2,7 +2,7 @@
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
 
-#include "bsml/shared/BSML.hpp"
+DEFINE_TYPE(BSAndroidEditor, EditorViewController);
 
 using namespace BSAndroidEditor;
 
@@ -15,28 +15,18 @@ constexpr auto kEditorMainLayout = R"bsml(
   <horizontal pad="1">
     <text text="Map Editor" align="Center" font-size="6"/>
   </horizontal>
-  <list id="song-list" select-cell="song-selected" expand-cell="true" list-width="90"/>
+  <list id="song-list" select-cell="OnSongSelected" expand-cell="true" list-width="90"/>
   <horizontal pad="2" spacing="2">
-    <button text="New Blank Map" on-click="new-blank-map-clicked"/>
-    <button text="Edit Selected" id="edit-button" interactable="false" on-click="edit-selected-clicked"/>
+    <button text="New Blank Map" on-click="OnNewBlankMapClicked"/>
+    <button text="Edit Selected" id="edit-button" interactable="false" on-click="OnEditSelectedClicked"/>
   </horizontal>
 </vertical>
 )bsml";
 
 } // namespace
 
-void EditorViewController::DidActivate(bool firstActivation, bool /*addedToHierarchy*/,
-                                        bool /*screenSystemEnabling*/) {
-    if (!firstActivation) return;
-
-    BSML::parseAndConstruct(kEditorMainLayout, get_transform(), this);
-
-    // TODO: populate `songList` with installed custom levels. SongCore is
-    // the de facto standard for enumerating them on Quest — add it as a qpm
-    // dependency and pull its loaded-levels collection here, e.g. via
-    // `SongCore::API::Loading::GetAllLevels()` (verify against your
-    // installed SongCore version's actual API).
-    getLogger().info("EditorViewController activated; song list population is a TODO");
+StringW EditorViewController::get_Content() {
+    return kEditorMainLayout;
 }
 
 void EditorViewController::OnSongSelected(HMUI::TableView* /*tableView*/, int index) {
@@ -56,7 +46,7 @@ void EditorViewController::OnNewBlankMapClicked() {
     // one of the most frequently reshaped classes across Beat Saber updates,
     // so check its current constructor/method overloads in your
     // extern/includes before wiring this up.
-    getLogger().info("Started a blank map editor session; gameplay-scene transition is a TODO");
+    Logger.info("Started a blank map editor session; gameplay-scene transition is a TODO");
 }
 
 void EditorViewController::OnEditSelectedClicked() {
@@ -67,5 +57,5 @@ void EditorViewController::OnEditSelectedClicked() {
     //   auto difficulty = bs_editor::core::LoadDifficultyFile(difficultyPath);
     //   bs_editor::EditorSession::Instance().Start(info, difficulty, info.beatsPerMinute);
     // followed by the same gameplay-scene transition as OnNewBlankMapClicked.
-    getLogger().info("Edit-selected-song flow is a TODO (wire up SongCore level resolution)");
+    Logger.info("Edit-selected-song flow is a TODO (wire up SongCore level resolution)");
 }

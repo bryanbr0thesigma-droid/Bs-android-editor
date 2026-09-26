@@ -1,76 +1,62 @@
-// Per-frame bridge between real VR controller input and EditorController.
+// Per-frame bridge between real VR controller input and EditorController,
+// plus keeping the game's own audio playback in sync with the editor's
+// playhead (play/pause/scrub).
 //
-// Design choice: this piggybacks on the game's *existing* per-frame
-// AudioTimeSyncController::Update hook rather than injecting a brand-new
-// custom MonoBehaviour component. Registering a new IL2CPP-visible
-// MonoBehaviour (so Unity's message system will call its Update/Start) needs
-// extra boilerplate from the `custom-types` package whose exact macro
-// spelling drifts across beatsaber-hook/cordl releases; reusing an existing,
-// already-hookable Update method sidesteps that and keeps this file's
-// version-sensitive surface as small as possible.
+// Verified against bs-cordl 4500.1.0 (GlobalNamespace::VRController,
+// GlobalNamespace::AudioTimeSyncController) and UnityEngine::Time. Unlike
+// an earlier draft of this file, this does NOT use UnityEngine::XR::
+// InputDevice/CommonUsages: that codegen dump has no TryGetFeatureValue on
+// InputDevice at all (likely stripped as an unused generic method), so
+// controller pose/trigger/thumbstick come from Beat Saber's own
+// GlobalNamespace::VRController component instead, which is what the game
+// itself uses for saber tracking and exposes exactly what we need
+// (position, thumbstick, triggerValue) as plain properties.
 //
-// VERSION-SENSITIVE FILE: verify against your own extern/includes:
-//   - GlobalNamespace::AudioTimeSyncController and its Update()/songTime
-//     have changed shape across Beat Saber updates more than most classes.
-//   - UnityEngine::XR::InputDevices / CommonUsages are stock Unity XR API
-//     (not Beat Saber's own code), so they're far more stable across game
-//     versions, but the exact out-parameter idiom (ByRef<T> vs T&) depends
-//     on your bs-cordl version's codegen style.
+// Control mapping: right hand places/deletes/drags (mirrors the base
+// game's saber hand for cutting notes); left hand's thumbstick X scrubs
+// the playhead and its trigger toggles play/pause.
 #include "bs-android-editor/Hooks/GameplayHooks.hpp"
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
 
-#include "beatsaber-hook/shared/utils/hooking.hpp"
+#include "beatsaber-hook/shared/hooking.hpp"
 
 #include "GlobalNamespace/AudioTimeSyncController.hpp"
-#include "UnityEngine/XR/CommonUsages.hpp"
-#include "UnityEngine/XR/InputDevice.hpp"
-#include "UnityEngine/XR/InputDevices.hpp"
+#include "GlobalNamespace/VRController.hpp"
+#include "UnityEngine/Time.hpp"
 #include "UnityEngine/XR/XRNode.hpp"
 
 #include <cmath>
 
 using namespace GlobalNamespace;
-using namespace UnityEngine::XR;
 
 namespace {
 
-bool g_previousTriggerDown = false;
-
-// Tracking-space height (meters) of Beat Saber's grid center; used to
-// re-center the raw controller position onto the editor's local grid
-// coordinates. Approximate — replace with the real play-space/grid
-// transform if you wire one up.
+constexpr float kTriggerDownThreshold = 0.5f;
 constexpr float kGridOriginHeightMeters = 1.0f;
+constexpr double kResyncEpsilonSeconds = 1.0 / 1000.0;
 
-bs_editor::ControllerFrame ReadRightControllerFrame(double songTimeSeconds) {
-    bs_editor::ControllerFrame frame;
-    frame.songTimeSeconds = songTimeSeconds;
-
-    InputDevice rightHand = InputDevices::GetDeviceAtXRNode(XRNode::RightHand);
-
-    UnityEngine::Vector3 position{};
-    if (rightHand.TryGetFeatureValue(CommonUsages::get_devicePosition(), position)) {
-        frame.localPosition = {position.x, position.y - kGridOriginHeightMeters};
-    }
-
-    UnityEngine::Vector2 thumbstick{};
-    if (rightHand.TryGetFeatureValue(CommonUsages::get_primary2DAxis(), thumbstick)) {
-        frame.aimMagnitude = std::sqrt(thumbstick.x * thumbstick.x + thumbstick.y * thumbstick.y);
-        frame.aimAngleDegrees = std::atan2(thumbstick.x, thumbstick.y) * (180.0f / static_cast<float>(M_PI));
-    }
-
-    bool triggerDown = false;
-    rightHand.TryGetFeatureValue(CommonUsages::get_triggerButton(), triggerDown);
-    frame.triggerDown = triggerDown;
-    frame.triggerPressedThisFrame = triggerDown && !g_previousTriggerDown;
-    frame.triggerReleasedThisFrame = !triggerDown && g_previousTriggerDown;
-    g_previousTriggerDown = triggerDown;
-
-    return frame;
-}
+VRController* g_leftController = nullptr;
+VRController* g_rightController = nullptr;
+bool g_previousLeftTriggerDown = false;
+bool g_previousRightTriggerDown = false;
 
 } // namespace
+
+// VRController is a per-hand MonoBehaviour that already runs every frame;
+// piggybacking on its Update() to cache each hand's instance avoids the
+// extra custom-types boilerplate a brand-new MonoBehaviour would need (see
+// the note in the previous version of this file), same rationale as
+// hooking AudioTimeSyncController::Update below.
+MAKE_HOOK_MATCH(VRController_Update, &VRController::Update, void, VRController* self) {
+    VRController_Update(self);
+
+    if (self->get_node() == UnityEngine::XR::XRNode::LeftHand) {
+        g_leftController = self;
+    } else if (self->get_node() == UnityEngine::XR::XRNode::RightHand) {
+        g_rightController = self;
+    }
+}
 
 MAKE_HOOK_MATCH(AudioTimeSyncController_Update, &AudioTimeSyncController::Update, void,
                 AudioTimeSyncController* self) {
@@ -80,17 +66,61 @@ MAKE_HOOK_MATCH(AudioTimeSyncController_Update, &AudioTimeSyncController::Update
         return;
     }
 
-    // Editor mode owns time while active: the song clock only moves via the
-    // editor's own scrubbing, so we deliberately skip the original Update
-    // (which would otherwise keep advancing songTime during playback).
-    const double songTime = self->get_songTime();
-    session.controller()->ProcessFrame(ReadRightControllerFrame(songTime));
+    // Editor mode owns time while active: we deliberately skip the
+    // original Update (which would otherwise advance songTime from actual
+    // playback) and drive everything from EditorController's own playhead.
+    bs_editor::EditorController* controller = session.controller();
+    const float deltaTime = UnityEngine::Time::get_deltaTime();
+
+    float scrubAxis = 0.0f;
+    if (g_leftController != nullptr) {
+        const auto thumbstick = g_leftController->get_thumbstick();
+        scrubAxis = thumbstick.x;
+
+        const bool leftTriggerDown = g_leftController->get_triggerValue() > kTriggerDownThreshold;
+        if (leftTriggerDown && !g_previousLeftTriggerDown) {
+            controller->TogglePlaying();
+            if (controller->isPlaying()) {
+                self->Resume();
+            } else {
+                self->Pause();
+            }
+        }
+        g_previousLeftTriggerDown = leftTriggerDown;
+    }
+
+    const double beforeSeconds = controller->currentTimeSeconds();
+    controller->AdvanceTime(deltaTime, scrubAxis);
+    const double afterSeconds = controller->currentTimeSeconds();
+    if (std::fabs(afterSeconds - beforeSeconds) > kResyncEpsilonSeconds) {
+        self->SeekTo(static_cast<float>(afterSeconds));
+    }
+
+    if (g_rightController != nullptr) {
+        bs_editor::ControllerFrame frame;
+
+        const auto position = g_rightController->get_position();
+        frame.localPosition = {position.x, position.y - kGridOriginHeightMeters};
+
+        const auto thumbstick = g_rightController->get_thumbstick();
+        frame.aimMagnitude = std::sqrt(thumbstick.x * thumbstick.x + thumbstick.y * thumbstick.y);
+        frame.aimAngleDegrees = std::atan2(thumbstick.x, thumbstick.y) * (180.0f / static_cast<float>(M_PI));
+
+        const bool triggerDown = g_rightController->get_triggerValue() > kTriggerDownThreshold;
+        frame.triggerDown = triggerDown;
+        frame.triggerPressedThisFrame = triggerDown && !g_previousRightTriggerDown;
+        frame.triggerReleasedThisFrame = !triggerDown && g_previousRightTriggerDown;
+        g_previousRightTriggerDown = triggerDown;
+
+        controller->ProcessFrame(frame);
+    }
 }
 
 namespace bs_editor::hooks {
 
 void InstallGameplayHooks() {
-    INSTALL_HOOK(getLogger(), AudioTimeSyncController_Update);
+    INSTALL_HOOK(Logger, VRController_Update);
+    INSTALL_HOOK(Logger, AudioTimeSyncController_Update);
 }
 
 } // namespace bs_editor::hooks

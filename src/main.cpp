@@ -1,39 +1,29 @@
-// Mod entry point. Targets the Scotland2 modloader (the current QuestLoader
-// successor) + beatsaber-hook 6.x's setup()/load() convention. If your qpm
-// dependencies resolve to a different modloader (plain QuestLoader) or an
-// older beatsaber-hook, check that project's example mod for the current
-// exact entry-point signatures — this shape has changed a few times across
-// the ecosystem's history.
+// Mod entry point for the Scotland2 modloader + beatsaber-hook 8.x.
+//
+// Verified directly against QuestPackageManager/beatsaber-hook@v8.2.1 and
+// sc2ad/scotland2: setup(CModInfo*)/load() match modloader::SetupFunc and
+// modloader::LoadFunc exactly (see shared/loader.hpp), and beatsaber-hook's
+// own README confirms i2c::functions::initialize() (not the old
+// il2cpp_functions::Init()) is what needs to run once il2cpp is up.
 #include "bs-android-editor/main.hpp"
 #include "bs-android-editor/Hooks/GameplayHooks.hpp"
 #include "bs-android-editor/Hooks/MenuHooks.hpp"
 
-#include "beatsaber-hook/shared/utils/hooking.hpp"
-#include "scotland2/shared/loader.hpp"
-
-#include <memory>
-
-namespace {
-std::unique_ptr<Logger> g_logger;
-}
-
-Logger& getLogger() {
-    static Logger& instance = *(g_logger = std::make_unique<Logger>(ModInfo{MOD_ID, VERSION, 0}));
-    return instance;
-}
+#include "beatsaber-hook/shared/api.hpp"
+#include "scotland2/shared/modloader.h"
 
 extern "C" void setup(CModInfo* info) {
     info->id = MOD_ID;
     info->version = VERSION;
     info->version_long = 0;
-    getLogger().info("bs-android-editor setup complete");
+    Logger.info("bs-android-editor setup complete");
 }
 
 extern "C" void load() {
-    il2cpp_functions::Init();
+    i2c::functions::initialize();
 
-    getLogger().info("Installing bs-android-editor hooks...");
+    Logger.info("Installing bs-android-editor hooks...");
     bs_editor::hooks::InstallMenuHooks();
     bs_editor::hooks::InstallGameplayHooks();
-    getLogger().info("bs-android-editor hooks installed");
+    Logger.info("bs-android-editor hooks installed");
 }

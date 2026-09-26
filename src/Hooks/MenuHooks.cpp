@@ -1,18 +1,16 @@
 // Injects a "Map Editor" button into the main menu.
 //
-// VERSION-SENSITIVE FILE: the exact type/method names below
-// (GlobalNamespace::MainMenuViewController, its DidActivate signature) come
-// from bs-cordl codegen generated against *your* copy of Beat Saber and can
-// shift across game updates. Check them against extern/includes before
-// building; this mirrors the standard "hook DidActivate, add a BSML button"
-// pattern used by many existing Quest mods (e.g. how PlaylistManager and
-// SongCore add their own main-menu buttons).
+// Verified against bs-cordl 4500.1.0: MainMenuViewController::DidActivate's
+// signature below is the real one for that game version. If you're building
+// against a different game version, re-check it in your own extern/includes
+// (GlobalNamespace/zzzz__MainMenuViewController_def.hpp) — this class stays
+// stable across most updates but isn't guaranteed to.
 #include "bs-android-editor/Hooks/MenuHooks.hpp"
 #include "bs-android-editor/UI/EditorFlowCoordinator.hpp"
 #include "bs-android-editor/main.hpp"
 
-#include "beatsaber-hook/shared/utils/hooking.hpp"
-#include "bsml/shared/BSML-Lite/Creation/Standard.hpp"
+#include "beatsaber-hook/shared/hooking.hpp"
+#include "bsml/shared/BSML-Lite/Creation/Buttons.hpp"
 
 #include "GlobalNamespace/MainMenuViewController.hpp"
 #include "UnityEngine/Vector2.hpp"
@@ -33,7 +31,7 @@ MAKE_HOOK_MATCH(MainMenuViewController_DidActivate, &MainMenuViewController::Did
 namespace bs_editor::hooks {
 
 void InstallMenuHooks() {
-    INSTALL_HOOK(getLogger(), MainMenuViewController_DidActivate);
+    INSTALL_HOOK(Logger, MainMenuViewController_DidActivate);
 }
 
 } // namespace bs_editor::hooks

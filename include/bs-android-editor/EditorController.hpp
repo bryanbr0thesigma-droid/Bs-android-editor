@@ -25,7 +25,6 @@ struct ControllerFrame {
     bool triggerDown = false;
     bool triggerPressedThisFrame = false;
     bool triggerReleasedThisFrame = false;
-    double songTimeSeconds = 0.0;
 };
 
 class EditorController {
@@ -65,6 +64,30 @@ public:
 
     bool IsObstacleDragActive() const { return obstacleDragActive_; }
 
+    // --- Playback / scrubbing ---
+    // The editor owns the current playback position itself rather than
+    // trusting the game's own audio clock: time only moves here, via
+    // AdvanceTime(), which the Quest-side hook calls once per frame with
+    // real elapsed time and (optionally) a scrub axis. The hook layer is
+    // then responsible for feeding this back into the game's actual audio
+    // player position so the song is audibly in sync with the editor.
+    void SetPlaying(bool playing) { isPlaying_ = playing; }
+    void TogglePlaying() { isPlaying_ = !isPlaying_; }
+    bool isPlaying() const { return isPlaying_; }
+
+    // Directly moves the playhead (e.g. jump-to-start, or syncing to a
+    // position picked some other way). Clamped to zero at the low end.
+    void SetCurrentTimeSeconds(double seconds);
+    double currentTimeSeconds() const { return currentTimeSeconds_; }
+    double currentBeat() const;
+
+    // Advances the playhead by `deltaSeconds` of wall-clock time if
+    // isPlaying(), and/or seeks it by `scrubAxis` (typically a thumbstick
+    // axis in [-1, 1]; deadzoned) at up to kMaxScrubSecondsPerSecond of
+    // song time per second held. Both can apply in the same call (holding
+    // the scrub axis while playing seeks relative to normal playback).
+    void AdvanceTime(double deltaSeconds, float scrubAxis = 0.0f);
+
 private:
     void PlaceAtCursor(const ControllerFrame& frame);
     void StartObstacleDrag(const ControllerFrame& frame);
@@ -83,6 +106,9 @@ private:
     bool obstacleDragActive_ = false;
     double obstacleStartBeat_ = 0.0;
     int obstacleStartLineIndex_ = 0;
+
+    bool isPlaying_ = false;
+    double currentTimeSeconds_ = 0.0;
 };
 
 } // namespace bs_editor

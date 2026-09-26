@@ -1,49 +1,52 @@
 # BS Android Editor
 
 An in-headset beatmap editor for **Beat Saber on Quest (Meta's standalone
-build)**: place notes, bombs, walls and lighting events without leaving VR,
-undo/redo as you go, and save straight to a playable custom level — packaged
-as a `.qmod` you install with QuestPatcher.
+build)**: place notes (with direction, including dots), bombs and walls,
+scrub/play the song while you work, undo/redo as you go, and save straight
+to a playable custom level — packaged as a `.qmod` you install with
+QuestPatcher.
 
 ## Scope and honesty check
 
-This repo is two things, and they're verified very differently:
+This repo is two things, verified to different degrees:
 
 1. **`include/` + `src/Core/` + `src/EditorController.cpp` + `src/EditorSession.cpp`**
    — the actual beatmap editing engine: the v3 map data model, JSON
    read/write (round-trips unknown fields untouched), grid/beat-time math,
-   undo/redo, and the input-to-edit logic. This is plain C++17, has **zero**
-   dependency on Beat Saber, IL2CPP, or Android, and is proven by a real,
-   passing test suite you can run right now (see below).
+   playback/scrubbing, undo/redo, and the input-to-edit logic. This is
+   plain C++17 with **zero** dependency on Beat Saber, IL2CPP, or Android,
+   and is proven by a real, passing test suite you can run right now (76
+   checks — see below).
 
 2. **`src/Hooks/`, `src/UI/`, `qpm.json`, `mod.template.json`, `CMakeLists.txt`**
-   — the Quest-side native mod that hooks into the running game and exposes
-   the editor in-headset. This part is a **scaffold**: it follows the real,
-   current conventions for Quest native mods (QPM, beatsaber-hook,
-   custom-types, BSML), but it cannot be compiled or tested in this
-   environment because doing so requires files this repo will never ship —
-   see below. Files in this layer are commented with a `VERSION-SENSITIVE
-   FILE` header noting exactly what to double-check against your own setup.
+   — the Quest-side native mod that hooks into the running game. This
+   cannot be *compiled* in this environment (no Android NDK here), but
+   every API call in it — hook macros, the logger, entry-point signatures,
+   the custom-types class-registration pattern, the exact BSML helper
+   names, and the specific game classes/methods it hooks — was checked
+   directly against the real source of every dependency (beatsaber-hook,
+   scotland2, paper2_scotland2, custom-types, BSML, and bs-cordl itself),
+   not guessed from memory. Files still carry a comment where something is
+   genuinely game-version-sensitive (see the TODO list below) or where I
+   made a deliberate simplification worth knowing about.
 
-### Why the hook layer can't be verified here (and never should ship prebuilt)
+### About `bs-cordl` (the IL2CPP codegen headers)
 
-Quest mods hook into the game's IL2CPP internals through header files
-("codegen"/`bs-cordl`) that are generated *from your own installed copy of
-Beat Saber* — they encode the exact class layout of that specific build, and
-regenerating them requires tools like QuestPatcher pointed at your own
-legally-owned APK. There is no way to obtain or fake those headers without
-the game files, and redistributing anything derived from a dump of the game
-itself would be a copyright problem, so this repo deliberately doesn't
-attempt it. The `Hooks/`/`UI/` code here is written to compile against a
-`bs-cordl` you generate yourself; you're the one who builds and signs the
-final `.qmod`.
+An earlier version of this README overstated how hard this part is: `qpm
+restore` fetches `bs-cordl` from QPM's package registry like any other
+dependency (currently resolving to `4500.1.0`, which targets a specific,
+recent Beat Saber build) — you don't need to dump your own headers unless
+you're targeting a *different* game version than whatever `bs-cordl`
+version resolves. If your installed Beat Saber build doesn't match, pin
+`bs-cordl` in `qpm.json` to a version generated for yours (the BSMG modding
+docs cover dumping your own via QuestPatcher if no published version fits).
 
 ## Repo layout
 
 ```
 include/bs-android-editor/
   Core/                   Data model, grid math, JSON serializer (engine-agnostic)
-  EditorController.hpp    Input-frame -> document edits (engine-agnostic)
+  EditorController.hpp    Input-frame -> document edits, playback/scrub (engine-agnostic)
   EditorSession.hpp       Owns the active document+controller (engine-agnostic)
   Hooks/                  Declarations for the IL2CPP hooks
   UI/                     Declarations for the BSML flow coordinator/view controller
@@ -53,7 +56,7 @@ tests/                    Standalone host-buildable test suite for the Core/ lay
 resources/EditorMain.bsml BSML layout for the editor menu screen
 libs/nlohmann/json.hpp    Vendored nlohmann::json (MIT), used by the Core layer
 qpm.json, mod.template.json, CMakeLists.txt, build.sh   Quest/QPM build config
-.github/workflows/build.yml   CI: runs the host tests, then attempts a real qmod build
+.github/workflows/build.yml   CI: runs the host tests, then builds a real .qmod
 ```
 
 ## Running the tests (works right now, no setup)
@@ -65,83 +68,96 @@ ctest --test-dir build-tests --output-on-failure
 ```
 
 This builds and exercises the actual editing engine: grid math, beat/time
-conversion under BPM changes, `.dat`/`Info.dat` round-tripping (including
-that fields this tool doesn't model, like arcs or light event box groups,
-survive a load+save unchanged), undo/redo, and the controller-input-to-edit
-pipeline (placing a note, dragging out a wall, deleting the nearest object).
+conversion under BPM changes, playback/scrub behavior, `.dat`/`Info.dat`
+round-tripping (including that fields this tool doesn't model, like arcs or
+light event box groups, survive a load+save unchanged), undo/redo, and the
+controller-input-to-edit pipeline (placing a note, dragging out a wall,
+deleting the nearest object).
 
 ## Building the actual Quest mod
 
 You'll need, on your own machine (not in this sandbox):
 
-1. **QuestPatcher** with your legally-owned Beat Saber APK, used to generate
-   your own `bs-cordl` headers for your exact game version. Follow the
-   BSMG modding guide for "setting up a mod project" / dumping headers if
-   you haven't done this before.
-2. **Android NDK** (r26 or newer) — set `ANDROID_NDK_HOME`.
-3. **qpm-rust** (Quest Package Manager CLI) — install from
+1. **Android NDK** (r26 or newer) — set `ANDROID_NDK_HOME`.
+2. **qpm-rust** (Quest Package Manager CLI) — install from
    [QuestPackageManager/QPM.CLI](https://github.com/QuestPackageManager/QPM.CLI).
+3. Only if `bs-cordl`'s default resolved version doesn't match your
+   installed Beat Saber build: **QuestPatcher** with your own copy of the
+   game, to dump matching headers (see above).
 
 Then:
 
 ```bash
-# Pin bs-cordl to match your game version first — see qpm.json's comment.
 qpm restore
 
 ./build.sh              # cross-compiles libbs-android-editor.so via CMake+NDK
-qpm qmod build          # packages mod.template.json + the .so into a .qmod
-                         # (if this subcommand doesn't exist in your qpm
-                         # version, run `qpm --help` / `qpm qmod --help`)
+qpm qmod zip            # packages mod.template.json + the .so into a .qmod
+                         # (NOT `qpm qmod build` — confirmed from qpm.cli's
+                         # own source that's a deprecated alias for
+                         # regenerating mod.json only, no .qmod produced)
 ```
+
+`CMakeLists.txt` includes qpm's own generated `qpm_defines.cmake` and
+`extern.cmake` (regenerated by every `qpm restore`, not committed) rather
+than hand-rolling include paths and link flags — that's what actually wires
+up per-dependency compile flags like `bs-cordl`'s required
+`-fdeclspec -DUNITY_6 -DHAS_CODEGEN`.
 
 Install the resulting `.qmod` the normal way: QuestPatcher → your Beat Saber
 install → "Mod install" → pick the `.qmod` file.
 
-`.github/workflows/build.yml` runs the host tests on every push, then
-attempts this same NDK+QPM build in CI so you get a downloadable `.qmod`
-artifact automatically. `qpm.json` leaves every dependency's version
-unconstrained (`"*"`) so QPM's resolver can pick a mutually-compatible set
-on its own — every dependency *except* `bs-cordl` tracks the modloader
-ecosystem, not the game, so there's normally nothing to pin there. Only
-`bs-cordl` encodes an actual Beat Saber version; leaving it at `"*"` gets
-you the newest headers available, which may not match the game version you
-actually have installed — pin it once you know that version (see below).
+`.github/workflows/build.yml` runs the host tests on every push, then does
+this same NDK+QPM build in CI so you get a downloadable `.qmod` artifact
+automatically.
 
 ### Things you'll need to fill in before this does anything in-game
 
 These are marked `TODO` at their exact location in the source:
 
-- **`qpm.json`**: `bs-cordl`'s version range is a placeholder (`"*"`) —
-  pin it to the version matching your dumped headers.
 - **`mod.template.json`**: `author`, `packageVersion` (your exact Beat
   Saber version string), and `coverImage` are placeholders.
 - **`src/UI/EditorViewController.cpp`**: populating the song list from
   installed custom levels (the community-standard way is via SongCore's
   loaded-levels API) and the "start gameplay in editor mode" transition
   (via `GlobalNamespace::MenuTransitionsHelper`, one of the classes that
-  reshapes most often across game updates — check its current signature).
-- **`src/Hooks/GameplayHooks.cpp`**: the controller-to-grid mapping is a
-  reasonable approximation (see `kGridOriginHeightMeters`); swap in the
-  game's real grid/play-space transform for pixel-perfect placement, and
-  confirm the `TryGetFeatureValue` out-parameter idiom matches your
-  `bs-cordl`'s codegen style (`ByRef<T>` vs plain reference).
+  reshapes most often across game updates — check its current constructor/
+  method overloads against your own `extern/includes`).
+- **`src/Hooks/GameplayHooks.cpp`**: the controller-to-grid mapping
+  (`kGridOriginHeightMeters`) is a reasonable approximation, not the game's
+  real play-space/grid transform — swap it in for pixel-perfect placement
+  once you've identified it.
 
-Everything else in `Hooks/`/`UI/` is real, idiomatic Quest-modding structure
-(the hook macros, the custom-types class registration pattern, the BSML
-layout/button wiring) — it's the handful of spots above, plus whatever your
-specific `bs-cordl` renames, that need a pass once you're building against
-your own headers.
+Everything else — the hook macros, entry-point signatures, the
+custom-types registration pattern, BSML's helper names, and the specific
+`GlobalNamespace`/`HMUI` classes and methods hooked — was checked directly
+against the real dependency source for the versions `qpm restore`
+currently resolves, not guessed. If a future `qpm restore` pulls newer
+major versions of these dependencies, re-verify the same way (their
+`shared/` headers are plain text — grep them).
 
 ## What the editor currently supports (engine layer)
 
-- Color notes, bombs, and full-height walls, with undo/redo for every edit
-- Grid-snapped placement (4x3 grid) and 8-direction cut-angle snapping from
-  thumbstick deflection, with a dot-note deadzone
+- Color notes (with 8-direction cut angle + dot notes), bombs, and
+  full-height walls, with undo/redo for every edit
+- Grid-snapped placement (4x3 grid) from controller position
 - Adjustable beat-snap subdivision (1/4, 1/8, 1/16, ...)
 - BPM-change-aware beat↔seconds conversion
+- Playback and scrubbing: the editor owns its own playhead (play/pause,
+  seek by a scrub axis) rather than trusting the game's own audio clock —
+  see `EditorController::AdvanceTime`
 - Load/save that never destroys map data this editor doesn't model yet
   (arcs, chains, light event box groups, `customData`, ...)
 
-Not yet implemented (left as clear extension points, not silently missing):
-partial-height walls, arcs/chains, full lighting choreography (only basic
-on/off/flash events), and multi-select/box-select.
+In-headset control mapping (`src/Hooks/GameplayHooks.cpp`): right
+hand places/deletes/drags using its position, thumbstick angle (cut
+direction) and trigger; left hand's thumbstick scrubs the timeline and its
+trigger toggles play/pause, synced back into the game's own audio playback
+via `AudioTimeSyncController::Resume`/`Pause`/`SeekTo`.
+
+Not yet implemented (left as clear extension points, not silently
+missing): partial-height walls, arcs/chains, full lighting choreography
+(only basic on/off/flash events), multi-select/box-select, VR playtest
+transition (see TODO above), Android audio file import with transcoding to
+Ogg Vorbis, and a decorations/prop-placement mode with grab-to-transform —
+the last two were explicitly scoped out of this pass to get the base
+editor's native build compiling first; ask for them next.

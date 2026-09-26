@@ -16,6 +16,8 @@ using core::kGridRows;
 
 namespace {
 constexpr double kDeleteBeatTolerance = 0.25;
+constexpr float kScrubDeadzone = 0.15f;
+constexpr double kMaxScrubSecondsPerSecond = 6.0;
 }
 
 EditorController::EditorController(core::EditorDocument& document, double baseBpm, int snapSubdivision)
@@ -30,11 +32,29 @@ void EditorController::RefreshBpmTimeline() {
 
 EditorController::CursorPreview EditorController::PreviewAt(const ControllerFrame& frame) const {
     CursorPreview preview;
-    const double rawBeat = timeConverter_.SecondsToBeat(frame.songTimeSeconds);
-    preview.beat = BeatTimeConverter::SnapBeat(rawBeat, snapSubdivision_);
+    preview.beat = BeatTimeConverter::SnapBeat(currentBeat(), snapSubdivision_);
     LocalPositionToGridCell(frame.localPosition, preview.lineIndex, preview.lineLayer);
     preview.direction = AngleToCutDirection(frame.aimAngleDegrees, frame.aimMagnitude);
     return preview;
+}
+
+void EditorController::SetCurrentTimeSeconds(double seconds) {
+    currentTimeSeconds_ = std::max(seconds, 0.0);
+}
+
+double EditorController::currentBeat() const {
+    return timeConverter_.SecondsToBeat(currentTimeSeconds_);
+}
+
+void EditorController::AdvanceTime(double deltaSeconds, float scrubAxis) {
+    double next = currentTimeSeconds_;
+    if (isPlaying_) {
+        next += deltaSeconds;
+    }
+    if (std::fabs(scrubAxis) > kScrubDeadzone) {
+        next += static_cast<double>(scrubAxis) * kMaxScrubSecondsPerSecond * deltaSeconds;
+    }
+    SetCurrentTimeSeconds(next);
 }
 
 void EditorController::ProcessFrame(const ControllerFrame& frame) {

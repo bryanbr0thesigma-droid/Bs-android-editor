@@ -165,11 +165,11 @@ void TestEditorController() {
     controller.SetTool(EditorTool::Note);
     controller.SetActiveColor(NoteColor::Red);
 
+    controller.SetCurrentTimeSeconds(2.0); // 4 beats @ 120bpm
     ControllerFrame placeFrame;
     placeFrame.localPosition = GridCellToLocalPosition(2, 1);
     placeFrame.aimAngleDegrees = 0.0f;
     placeFrame.aimMagnitude = 1.0f;
-    placeFrame.songTimeSeconds = 2.0; // 4 beats @ 120bpm
     placeFrame.triggerPressedThisFrame = true;
     placeFrame.triggerDown = true;
     controller.ProcessFrame(placeFrame);
@@ -183,16 +183,16 @@ void TestEditorController() {
     }
 
     controller.SetTool(EditorTool::Obstacle);
+    controller.SetCurrentTimeSeconds(1.0);
     ControllerFrame dragStart;
     dragStart.localPosition = GridCellToLocalPosition(0, 0);
-    dragStart.songTimeSeconds = 1.0;
     dragStart.triggerPressedThisFrame = true;
     controller.ProcessFrame(dragStart);
     Check(controller.IsObstacleDragActive(), "obstacle drag starts on trigger press");
 
+    controller.SetCurrentTimeSeconds(2.0);
     ControllerFrame dragEnd;
     dragEnd.localPosition = GridCellToLocalPosition(2, 0);
-    dragEnd.songTimeSeconds = 2.0;
     dragEnd.triggerReleasedThisFrame = true;
     controller.ProcessFrame(dragEnd);
     Check(!controller.IsObstacleDragActive(), "obstacle drag ends on trigger release");
@@ -204,12 +204,45 @@ void TestEditorController() {
     }
 
     controller.SetTool(EditorTool::Delete);
+    controller.SetCurrentTimeSeconds(2.0);
     ControllerFrame deleteFrame;
     deleteFrame.localPosition = GridCellToLocalPosition(2, 1);
-    deleteFrame.songTimeSeconds = 2.0;
     deleteFrame.triggerPressedThisFrame = true;
     controller.ProcessFrame(deleteFrame);
     Check(doc.difficulty().colorNotes.empty(), "delete tool removed the nearest note");
+}
+
+void TestPlaybackAndScrubbing() {
+    EditorDocument doc;
+    EditorController controller(doc, /*baseBpm=*/120.0, /*snapSubdivision=*/4);
+
+    Check(!controller.isPlaying(), "playback starts paused");
+    CheckNear(controller.currentTimeSeconds(), 0.0, 1e-9, "playhead starts at zero");
+
+    // Paused: advancing time with no scrub input should not move the playhead.
+    controller.AdvanceTime(/*deltaSeconds=*/1.0, /*scrubAxis=*/0.0f);
+    CheckNear(controller.currentTimeSeconds(), 0.0, 1e-9, "paused playback does not advance the playhead");
+
+    controller.SetPlaying(true);
+    Check(controller.isPlaying(), "SetPlaying(true) starts playback");
+    controller.AdvanceTime(1.0, 0.0f);
+    CheckNear(controller.currentTimeSeconds(), 1.0, 1e-9, "playing advances the playhead by real time");
+
+    controller.TogglePlaying();
+    Check(!controller.isPlaying(), "TogglePlaying pauses");
+    controller.AdvanceTime(1.0, 0.0f);
+    CheckNear(controller.currentTimeSeconds(), 1.0, 1e-9, "pausing again stops the playhead");
+
+    // Scrubbing works independent of play state, and small deflections
+    // within the deadzone are ignored.
+    controller.AdvanceTime(1.0, 0.05f);
+    CheckNear(controller.currentTimeSeconds(), 1.0, 1e-9, "small scrub deflection is deadzoned");
+
+    controller.AdvanceTime(1.0, 1.0f);
+    Check(controller.currentTimeSeconds() > 1.0, "full scrub deflection seeks forward");
+
+    controller.SetCurrentTimeSeconds(-5.0);
+    CheckNear(controller.currentTimeSeconds(), 0.0, 1e-9, "playhead cannot be set negative");
 }
 
 void TestEditorSession() {
@@ -239,6 +272,7 @@ int main() {
     TestSongInfoRoundTrip();
     TestEditorDocumentUndoRedo();
     TestEditorController();
+    TestPlaybackAndScrubbing();
     TestEditorSession();
 
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
