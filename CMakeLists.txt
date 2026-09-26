@@ -55,3 +55,25 @@ target_compile_options(${COMPILE_ID} PRIVATE
 # options declared in their own qpm.json, and links extern/libs/*.so|*.a.
 # Must come after add_library() above since it references ${COMPILE_ID}.
 include(${CMAKE_CURRENT_SOURCE_DIR}/extern.cmake)
+
+# beatsaber-hook's published .so deliberately compiles A64HookFunction
+# with hidden visibility (so mods loaded together don't fight over one
+# shared copy), so every consumer has to compile
+# shared/inline-hook/And64InlineHook.cpp itself instead of linking it from
+# the .so — INSTALL_HOOK calls it directly from a header template.
+#
+# This is glob'd here rather than via qpm.json's additionalData.extraFiles
+# (the mechanism that normally exists for this): extraFiles tries to
+# symlink shared/inline-hook a *second* time on top of the directory
+# symlink that already exposes all of beatsaber-hook's shared/ tree
+# (including inline-hook) as part of its normal headers, and the
+# "File exists" fallback copy that follows resolves both sides of the
+# copy to the same inode through the nested symlinks, silently truncating
+# And64InlineHook.hpp/.cpp to 0 bytes (reproduced locally). Since these
+# files are already present via the ordinary header restore, no qpm.json
+# change is needed at all — just compile them.
+file(GLOB bs_hook_inline_hook_sources
+    ${EXTERN_DIR}/includes/beatsaber-hook/shared/inline-hook/*.cpp
+    ${EXTERN_DIR}/includes/beatsaber-hook/shared/inline-hook/*.c
+)
+target_sources(${COMPILE_ID} PRIVATE ${bs_hook_inline_hook_sources})
