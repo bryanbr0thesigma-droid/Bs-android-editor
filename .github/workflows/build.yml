@@ -45,10 +45,17 @@ jobs:
           add-to-path: false
 
       - name: Install QPM CLI
+        # Asset name confirmed from QuestPackageManager/QPM.CLI's own
+        # release workflow (.github/workflows/cargo-build.yml +
+        # cargo-release.yml as of their v1.5.11 tag): each build matrix
+        # entry uploads an artifact named `qpm-<suffix>`, and the release
+        # job zips each into `<artifact-name>.zip`, so the Linux x64 binary
+        # ships as `qpm-linux-x64.zip` containing a single `qpm` file.
         run: |
-          curl -L "https://github.com/QuestPackageManager/QPM.CLI/releases/latest/download/qpm-rust-linux" -o qpm
-          chmod +x qpm
-          sudo mv qpm /usr/local/bin/qpm
+          curl -L "https://github.com/QuestPackageManager/QPM.CLI/releases/latest/download/qpm-linux-x64.zip" -o qpm.zip
+          unzip -o qpm.zip -d qpm-bin
+          chmod +x qpm-bin/qpm
+          sudo mv qpm-bin/qpm /usr/local/bin/qpm
           qpm --version
 
       - name: Restore dependencies
