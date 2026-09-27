@@ -157,10 +157,40 @@ still crashes. If it does, the next real lead is an actual native crash
 log (a tombstone, `adb logcat` around the crash, or equivalent) rather
 than more static analysis or bisection.
 
-**This is a temporary diagnostic build, not a design change** — once the
-result comes back, `git revert` the commit that stripped `songcore` out
-(or the equivalent files get restored by hand) and the real fix, once
-known, gets applied on top of the full feature set.
+**Confirmed on a real headset: this diagnostic build launches all the way
+to the main menu.** That conclusively isolates the cause to the `songcore`
+dependency itself — specifically to `libbs-android-editor.so` linking
+against `libsongcore.so` at all, since nothing this mod's own code does
+with SongCore's API runs before the main menu even in the crashing build.
+
+The next test (currently live in this branch): `qpm.json` has `songcore`
+back as a real dependency again, but **no source file includes any
+SongCore header or calls any SongCore symbol** — `EditorLauncher.*` stay
+deleted, `EditorViewController` stays stubbed. `extern.cmake` links every
+non-header-only declared dependency's `.so` into the target regardless of
+whether any of our code actually references it, so this isolates "does
+merely linking `libsongcore.so` reproduce the crash" from "does it take
+an actual SongCore call." Two possible outcomes once tested:
+- **Crashes again with zero SongCore code**: the problem is purely at the
+  linking/loading level — most likely scotland2's mod load order (does it
+  actually load `libsongcore.so` before ours, given `songcore` appears as
+  a real dependency in this project's generated `mod.json`?) rather than
+  anything about calling SongCore's API.
+- **Launches fine**: the crash needs an actual call into SongCore, which
+  narrows it to specifically what `EditorLauncher.cpp`/`RefreshSongList()`
+  called — `GetAllLevels()`, `GetCharacteristicBySerializedName()`, or
+  reading fields directly off `CustomBeatmapLevel*` (`customLevelPath`,
+  `songName`, `levelID`) despite matching header content between the
+  linked and installed SongCore versions.
+
+This mod is not going back to the `979ee59` baseline permanently — this
+section gets replaced with the actual fix once that split is confirmed,
+not left as a standing limitation.
+
+**This is a temporary diagnostic build, not a design change** — the
+SongCore-backed song list and scene transition come back once the fix is
+known; `git log` has the exact commit that stripped `songcore` out if you
+need to see precisely what was removed.
 
 ### Song selection and the gameplay-scene transition
 

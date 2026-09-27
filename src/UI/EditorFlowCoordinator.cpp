@@ -20,6 +20,11 @@ void EditorFlowCoordinator::DidActivate(bool firstActivation, bool /*addedToHier
                                    nullptr, nullptr);
 }
 
+void EditorFlowCoordinator::BackButtonWasPressed(HMUI::ViewController* /*topViewController*/) {
+    _parentFlowCoordinator->DismissFlowCoordinator(this, HMUI::ViewController_AnimationDirection::Horizontal,
+                                                    nullptr, false);
+}
+
 namespace bs_editor::ui {
 
 void PresentEditorFlow() {

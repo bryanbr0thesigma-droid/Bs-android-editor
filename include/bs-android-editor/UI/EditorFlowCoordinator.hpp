@@ -20,6 +20,15 @@
 DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorFlowCoordinator, HMUI::FlowCoordinator) {
     DECLARE_OVERRIDE_METHOD_MATCH(void, DidActivate, &HMUI::FlowCoordinator::DidActivate, bool firstActivation,
                                   bool addedToHierarchy, bool screenSystemEnabling);
+
+    // HMUI::FlowCoordinator's own BackButtonWasPressed is a virtual no-op
+    // as far as actually leaving the flow goes - every flow coordinator is
+    // expected to override it and dismiss itself, same as bsml 0.4.55's own
+    // MainMenuHolderFlowCoordinator/ModSettingsFlowCoordinator do. Without
+    // this override, showBackButton = true shows the button but pressing
+    // it does nothing.
+    DECLARE_OVERRIDE_METHOD_MATCH(void, BackButtonWasPressed, &HMUI::FlowCoordinator::BackButtonWasPressed,
+                                  HMUI::ViewController* topViewController);
 };
 
 namespace bs_editor::ui {
