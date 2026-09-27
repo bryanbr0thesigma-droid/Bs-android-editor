@@ -65,20 +65,27 @@ future `qpm restore` resolves yet another set, re-verify the same way
 (their `shared/` headers are plain text — grep them for the class/macro
 you're about to call).
 
-**`qpm.json`'s `versionRange` for these pins the real thing, not `"*"`.**
-An earlier pass used `"*"` for beatsaber-hook/custom-types/bsml/
-paper2_scotland2/scotland2 to get past an unrelated resolver error, and
-that turned out to be a real bug, not a harmless placeholder: `qpm`
-copies each dependency's `versionRange` straight into the generated
-`mod.json`, so `"*"` told QuestPatcher/MBF "any version works" — even
-though this `.so` is compiled against one exact ABI per dependency and
-crashes on launch (with no log at all — it fails during the dynamic
-linker's symbol resolution, before this mod's own logger ever runs) if a
-*different* version of any of them is what's actually present on the
-headset, e.g. from another installed mod. Pin these to `^<the version
-qpm restore actually resolves>`, same as `bs-cordl`/`songcore` already
-were, so the installer can catch a real incompatibility up front instead
-of the game crashing silently.
+**A note on `qpm.json`'s `versionRange: "*"` for beatsaber-hook/
+custom-types/bsml/paper2_scotland2/scotland2**: this is permissive on
+purpose to get past an unrelated resolver error early on, but it's worth
+knowing what it actually does: `qpm` copies each dependency's
+`versionRange` straight into the generated `mod.json`, so `"*"` tells
+QuestPatcher/MBF "any version works" for a `.so` that's actually compiled
+against one exact ABI per dependency. A first attempt at tightening these
+to `^<the version qpm restore resolves>` (matching how `bs-cordl`/
+`songcore` are already pinned) made a real, reproducible in-headset
+install failure *worse* (the `.qmod` stopped importing into MBF at all,
+even with the headset's installed versions matching exactly what was
+pinned) for a reason not yet root-caused, so it's reverted here pending
+an actual crash log — install-time failures with no diagnostic output are
+exactly the kind of thing that needs a real device test loop, not more
+guessing from headers. If you hit a launch crash with zero log output on
+your own setup, mismatched shared-dependency versions are still a
+reasonable first thing to check by hand (compare what MBF/QuestPatcher
+shows as installed against beatsaber-hook 6.4.2 / bsml 0.4.55 /
+custom-types 0.18.4 / paper2_scotland2 4.8.0), just don't assume tightening
+the range here is a safe fix without testing the resulting `.qmod`'s
+*import* step too, not just the runtime behavior.
 
 ### Song selection and the gameplay-scene transition
 
