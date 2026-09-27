@@ -55,7 +55,9 @@
     {
       "id": "songcore",
       "versionRange": "^1.1.24",
-      "additionalData": {}
+      "additionalData": {
+        "includeQmod": false
+      }
     }
   ]
 }

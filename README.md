@@ -65,27 +65,34 @@ future `qpm restore` resolves yet another set, re-verify the same way
 (their `shared/` headers are plain text — grep them for the class/macro
 you're about to call).
 
-**A note on `qpm.json`'s `versionRange: "*"` for beatsaber-hook/
-custom-types/bsml/paper2_scotland2/scotland2**: this is permissive on
-purpose to get past an unrelated resolver error early on, but it's worth
-knowing what it actually does: `qpm` copies each dependency's
-`versionRange` straight into the generated `mod.json`, so `"*"` tells
-QuestPatcher/MBF "any version works" for a `.so` that's actually compiled
-against one exact ABI per dependency. A first attempt at tightening these
-to `^<the version qpm restore resolves>` (matching how `bs-cordl`/
-`songcore` are already pinned) made a real, reproducible in-headset
-install failure *worse* (the `.qmod` stopped importing into MBF at all,
-even with the headset's installed versions matching exactly what was
-pinned) for a reason not yet root-caused, so it's reverted here pending
-an actual crash log — install-time failures with no diagnostic output are
-exactly the kind of thing that needs a real device test loop, not more
-guessing from headers. If you hit a launch crash with zero log output on
-your own setup, mismatched shared-dependency versions are still a
-reasonable first thing to check by hand (compare what MBF/QuestPatcher
-shows as installed against beatsaber-hook 6.4.2 / bsml 0.4.55 /
-custom-types 0.18.4 / paper2_scotland2 4.8.0), just don't assume tightening
-the range here is a safe fix without testing the resulting `.qmod`'s
-*import* step too, not just the runtime behavior.
+**`qpm.json`'s `versionRange: "*"` for beatsaber-hook/custom-types/bsml/
+paper2_scotland2/scotland2** is permissive on purpose (worked around an
+unrelated resolver error early on) and, despite looking sloppy, turned out
+NOT to be the cause of a real problem it was suspected of: a launch crash
+with zero log output, tested against a headset whose installed versions
+of all four (beatsaber-hook 6.4.2, bsml 0.4.55, custom-types 0.18.4,
+paper2_scotland2 4.8.0) matched exactly what this repo compiles against
+anyway. Tightening these to `^<resolved version>` didn't fix that crash
+and broke something else (see below), so it's back to `"*"` here.
+
+**`songcore`'s `additionalData.includeQmod: false`** is the one dependency
+flag in this file that *is* load-bearing, and non-obviously so: without
+it, `qpm qmod zip`-generated `mod.json` includes a `songcore` entry in its
+`dependencies` array, and — isolated by testing four separate builds
+against a real headset (two different `songcore` version-range strings,
+one identical to the other, plus a build with no `songcore` reference at
+all) — every `.qmod` with that entry present consistently failed to even
+*import* into MBF at all ("Agent responded with an error", no further
+detail available), regardless of the version string used, while the one
+build without it imported fine. The underlying cause (something in how
+MBF resolves `songcore`'s own nested dependency chain against this mod's,
+a bug in MBF, or something else) isn't confirmed — this just routes
+around it the same way `scotland2` already had to be routed around,
+trading away this installer's ability to auto-install SongCore for anyone
+who doesn't already have it (document that as a manual prerequisite until
+this gets root-caused properly). The `.so` still links against and calls
+`libsongcore.so` identically either way; this flag only controls whether
+`mod.json` *declares* it as a fetchable dependency.
 
 ### Song selection and the gameplay-scene transition
 
@@ -97,6 +104,12 @@ filesystem by hand: `SongCore::API::Loading::GetAllLevels()` for the list,
 and each entry is already a `GlobalNamespace::BeatmapLevel` subclass
 (`SongCore::SongLoader::CustomBeatmapLevel`), so it can be passed straight
 into the game's own level-start API with no conversion.
+
+**You need SongCore installed separately before installing this mod.**
+It's `includeQmod: false` in `qpm.json` (see the note above) so QuestPatcher/
+MBF won't auto-install it for you — install it yourself first the normal
+way (from its GitHub releases, or via your installer's own core-mods list
+if it offers SongCore there).
 
 Both buttons always work on a **selected song's** "Standard"/"ExpertPlus"
 difficulty slot (creating that slot in `Info.dat` if it doesn't exist yet)
