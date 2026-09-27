@@ -53,9 +53,9 @@ void EditorViewController::RefreshSongList() {
 
     if (songList == nullptr) return; // not parsed yet (shouldn't happen after firstActivation)
 
-    songList->data->clear();
+    songList->data.clear();
     for (auto* level : levels_) {
-        songList->data->push_back(BSML::CustomCellInfo::construct(level->songName));
+        songList->data.push_back(BSML::CustomCellInfo::construct(level->songName));
     }
     songList->tableView->ReloadData();
 }
