@@ -138,38 +138,52 @@ latter — the first real-headset test of it made clear that wasn't what
 "New Blank Map" should mean). Clicking it swaps the same list over to show
 audio files instead of installed songs — specifically, `.ogg`/`.egg` files
 sitting in
-`/sdcard/ModData/com.beatgames.beatsaber/Mods/bs-android-editor/ImportAudio/`
-(created automatically the first time this mod runs, so it's there to drop
-files into via MBF/file transfer even before you ever click the button;
-re-clicking "New Blank Map" while already in this mode just rescans that
-folder). A song-name field and a BPM stepper appear too — both created in
-C++ via `BSML::Lite::CreateStringSetting`/`CreateIncrementSetting`
+`/sdcard/ModData/com.beatgames.beatsaber/Mods/bs-android-editor/ImportAudio/`.
+That folder is created during `load()` in `main.cpp` — unconditionally, at
+mod load time, not lazily the first time you click the button — so it's
+there to drop files into via MBF/file transfer as soon as the mod is
+installed, before you ever open the editor screen. (An earlier version of
+this created the folder lazily on first click instead, which was the
+actual cause of the first real-headset report of this feature: dropping a
+file in before ever clicking "New Blank Map" meant the folder didn't
+exist yet.) Re-clicking "New Blank Map" while already in this mode just
+rescans the folder, so dropping in a new file doesn't need leaving the
+screen. If the folder is empty, the list shows a single line saying so
+rather than just looking empty/broken.
+
+A song-name field, a BPM stepper, and a **"Create & Edit New Song"**
+button all appear too — all three created in C++ via `BSML::Lite::
+CreateStringSetting`/`CreateIncrementSetting`/`CreateUIButton`
 (`EditorViewController.cpp`), not BSML markup, since those helpers take a
 plain callback with no markup value-binding to get wrong; their exact
 on-screen position is a first guess, not something measured against a
 running game, so nudge the anchored positions there if they land somewhere
-awkward. Only `.ogg`/`.egg` are accepted because Beat Saber's own
-custom-level audio loading expects Ogg Vorbis data — an `.egg` file is
-just an Ogg Vorbis file under a different extension, by convention, so an
-`.mp3`/`.wav` dropped in that folder won't play right even though nothing
-stops you from renaming one; convert it to Ogg Vorbis first (outside this
-mod) if that's what you're starting from.
+awkward. (An earlier version reused the markup "Edit Selected" button as
+the confirm action without actually relabeling it, which meant there was
+no visible way to confirm an import at all — also caught by the first
+real-headset test, hence the dedicated button now; "Edit Selected" is
+back to only ever meaning "edit an existing selected song".) Only
+`.ogg`/`.egg` are accepted because Beat Saber's own custom-level audio
+loading expects Ogg Vorbis data — an `.egg` file is just an Ogg Vorbis
+file under a different extension, by convention, so an `.mp3`/`.wav`
+dropped in that folder won't play right even though nothing stops you
+from renaming one; convert it to Ogg Vorbis first (outside this mod) if
+that's what you're starting from.
 
-Selecting a file and clicking **"Edit Selected"** (now acting as the
-import-confirm button while in this mode — the label doesn't change, this
-isn't wired up yet) copies that file into a new folder under SongCore's
-own preferred custom-level path as `song.egg`, writes a fresh `Info.dat`
-and an empty difficulty file for it, asks SongCore to rescan
-(`SongCore::API::Loading::RefreshSongs`), and — once that finishes, polled
-non-blockingly once a frame rather than blocked on synchronously, since
-`RefreshSongs`'s own doc comment implies its completion is meant to be
-observed via an event/future rather than waited on — starts editing the
-new level the same way "Edit Selected" on an existing song does. There's
-no on-screen progress indicator for that wait yet, just a delay before the
-scene changes (`src/Hooks/EditorLauncher.cpp`'s `CreateNewSong`/
-`PollPendingNewSong`). Leaving this screen (back button) and reopening it
-always resets back to the normal existing-song list — that's the only way
-out of import mode right now, there's no separate cancel button.
+Selecting a file and clicking **"Create & Edit New Song"** copies that
+file into a new folder under SongCore's own preferred custom-level path
+as `song.egg`, writes a fresh `Info.dat` and an empty difficulty file for
+it, asks SongCore to rescan (`SongCore::API::Loading::RefreshSongs`), and
+— once that finishes, polled non-blockingly once a frame rather than
+blocked on synchronously, since `RefreshSongs`'s own doc comment implies
+its completion is meant to be observed via an event/future rather than
+waited on — starts editing the new level the same way "Edit Selected" on
+an existing song does. There's no on-screen progress indicator for that
+wait yet, just a delay before the scene changes
+(`src/Hooks/EditorLauncher.cpp`'s `CreateNewSong`/`PollPendingNewSong`).
+Leaving this screen (back button) and reopening it always resets back to
+the normal existing-song list — that's the only way out of import mode
+right now, there's no separate cancel button.
 
 `src/Hooks/EditorLauncher.cpp` is the piece that actually switches into the
 real VR gameplay scene (the same one `GameplayHooks.cpp`'s

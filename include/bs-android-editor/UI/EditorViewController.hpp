@@ -34,14 +34,18 @@
 // song (not just a new difficulty on an existing one): clicking it swaps
 // the same list over to show importable audio files instead (from
 // EditorLauncher's GetImportAudioDirectory()/ListImportableAudioFiles())
-// and reveals a BPM stepper + song-name field, created in code via
-// BSML::Lite::CreateIncrementSetting/CreateStringSetting (the same
+// and reveals a name field, a BPM stepper, and a dedicated "Create & Edit
+// New Song" button - all created in code via BSML::Lite::
+// CreateStringSetting/CreateIncrementSetting/CreateUIButton (the same
 // programmatic-creation pattern MenuHooks.cpp already uses for the main
 // menu button) rather than BSML markup, since those helpers take a plain
-// std::function callback with no markup value-binding to get wrong.
-// "Edit Selected" becomes the confirm button while in this mode. Leaving
-// the screen (back button) and reopening resets back to the normal song
-// list - there's no separate "cancel" control.
+// std::function callback with no markup value-binding to get wrong. An
+// earlier version of this repurposed the markup "Edit Selected" button as
+// the confirm action without actually relabeling it, which meant there
+// was no visible way to confirm an import - real-headset feedback made
+// that clear, hence the dedicated button instead. Leaving the screen
+// (back button) and reopening resets back to the normal song list -
+// there's no separate "cancel" control.
 #include "custom-types/shared/macros.hpp"
 
 #include <filesystem>
@@ -51,6 +55,7 @@
 #include "HMUI/InputFieldView.hpp"
 #include "HMUI/TableView.hpp"
 #include "HMUI/ViewController.hpp"
+#include "UnityEngine/UI/Button.hpp"
 #include "songcore/shared/SongLoader/CustomBeatmapLevel.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 #include "bsml/shared/BSML/Components/Settings/IncrementSetting.hpp"
@@ -78,6 +83,7 @@ DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewControlle
     void EnterImportMode();
     void RefreshImportList();
     void CreateImportControlsIfNeeded();
+    void OnCreateNewSongClicked();
 
     std::vector<SongCore::SongLoader::CustomBeatmapLevel*> levels_;
 
@@ -87,4 +93,5 @@ DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewControlle
     std::string pendingSongName_;
     BSML::IncrementSetting* bpmSetting_ = nullptr;
     HMUI::InputFieldView* nameSetting_ = nullptr;
+    UnityEngine::UI::Button* createNewSongButton_ = nullptr;
 };

@@ -5,6 +5,7 @@
 
 #include "songcore/shared/SongCore.hpp"
 
+#include "bsml/shared/BSML-Lite/Creation/Buttons.hpp"
 #include "bsml/shared/BSML-Lite/Creation/Settings.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 #include "bsml/shared/BSML/Parsing/BSMLParser.hpp"
@@ -51,6 +52,7 @@ void EditorViewController::DidActivate(bool firstActivation, bool /*addedToHiera
     importMode_ = false;
     if (bpmSetting_ != nullptr) bpmSetting_->get_gameObject()->SetActive(false);
     if (nameSetting_ != nullptr) nameSetting_->get_gameObject()->SetActive(false);
+    if (createNewSongButton_ != nullptr) createNewSongButton_->get_gameObject()->SetActive(false);
     RefreshSongList();
 }
 
@@ -79,13 +81,16 @@ void EditorViewController::CreateImportControlsIfNeeded() {
     // their own anchoredPosition. The values below are a first guess, not
     // measured against a running game; nudge them if they land somewhere
     // awkward.
-    nameSetting_ = BSML::Lite::CreateStringSetting(get_transform(), "Song Name", "", UnityEngine::Vector2(0, -20),
+    nameSetting_ = BSML::Lite::CreateStringSetting(get_transform(), "Song Name", "", UnityEngine::Vector2(0, -15),
                                                     [this](StringW value) { pendingSongName_ = std::string(value); });
     bpmSetting_ = BSML::Lite::CreateIncrementSetting(get_transform(), "BPM", /*decimals=*/1, /*increment=*/1.0f,
                                                       /*currentValue=*/static_cast<float>(pendingBpm_),
                                                       /*minValue=*/40.0f, /*maxValue=*/400.0f,
-                                                      UnityEngine::Vector2(0, -35),
+                                                      UnityEngine::Vector2(0, -30),
                                                       [this](float value) { pendingBpm_ = value; });
+    createNewSongButton_ = BSML::Lite::CreateUIButton(get_transform(), "Create & Edit New Song",
+                                                       UnityEngine::Vector2(0, -45),
+                                                       [this] { OnCreateNewSongClicked(); });
 }
 
 void EditorViewController::EnterImportMode() {
@@ -97,6 +102,7 @@ void EditorViewController::EnterImportMode() {
     CreateImportControlsIfNeeded();
     bpmSetting_->get_gameObject()->SetActive(true);
     nameSetting_->get_gameObject()->SetActive(true);
+    createNewSongButton_->get_gameObject()->SetActive(true);
     RefreshImportList();
 }
 
@@ -107,8 +113,18 @@ void EditorViewController::RefreshImportList() {
     if (songList == nullptr) return;
 
     songList->data.clear();
-    for (const auto& file : importFiles_) {
-        songList->data.push_back(BSML::CustomCellInfo::construct(file.filename().string()));
+    if (importFiles_.empty()) {
+        // Otherwise an empty folder just looks like the list/picker is
+        // missing entirely, with no indication of why - this was the
+        // actual bug behind the first real-headset report of this
+        // feature ("no audio picker"), alongside the import folder only
+        // having been created lazily (see main.cpp's load()).
+        songList->data.push_back(BSML::CustomCellInfo::construct(
+            "No .ogg/.egg files found - see README for the import folder path"));
+    } else {
+        for (const auto& file : importFiles_) {
+            songList->data.push_back(BSML::CustomCellInfo::construct(file.filename().string()));
+        }
     }
     songList->tableView->ReloadData();
 
@@ -128,16 +144,7 @@ void EditorViewController::OnNewBlankMapClicked() {
 
 void EditorViewController::OnEditSelectedClicked() {
     if (importMode_) {
-        if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(importFiles_.size())) {
-            Logger.info("OnEditSelectedClicked: select an audio file first");
-            return;
-        }
-
-        const auto& audioFile = importFiles_[selectedSongIndex];
-        std::string songName = pendingSongName_.empty() ? audioFile.stem().string() : pendingSongName_;
-        Logger.info("OnEditSelectedClicked: importing '{}' as '{}' at {} BPM", audioFile.string(), songName,
-                    pendingBpm_);
-        bs_editor::hooks::CreateNewSong(audioFile, songName, pendingBpm_);
+        Logger.info("OnEditSelectedClicked: in import mode - use 'Create & Edit New Song' instead");
         return;
     }
 
@@ -146,4 +153,16 @@ void EditorViewController::OnEditSelectedClicked() {
         return;
     }
     bs_editor::hooks::StartEditingLevel(levels_[selectedSongIndex], /*blank=*/false);
+}
+
+void EditorViewController::OnCreateNewSongClicked() {
+    if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(importFiles_.size())) {
+        Logger.info("OnCreateNewSongClicked: select an audio file first");
+        return;
+    }
+
+    const auto& audioFile = importFiles_[selectedSongIndex];
+    std::string songName = pendingSongName_.empty() ? audioFile.stem().string() : pendingSongName_;
+    Logger.info("OnCreateNewSongClicked: importing '{}' as '{}' at {} BPM", audioFile.string(), songName, pendingBpm_);
+    bs_editor::hooks::CreateNewSong(audioFile, songName, pendingBpm_);
 }

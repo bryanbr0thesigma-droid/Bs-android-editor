@@ -12,6 +12,7 @@
 // exist from beatsaber-hook ~7.x onward. Re-check this against your own
 // extern/includes if a future `qpm restore` resolves a newer major version.
 #include "bs-android-editor/main.hpp"
+#include "bs-android-editor/Hooks/EditorLauncher.hpp"
 #include "bs-android-editor/Hooks/GameplayHooks.hpp"
 #include "bs-android-editor/Hooks/MenuHooks.hpp"
 
@@ -36,6 +37,20 @@ extern "C" void setup(CModInfo* info) {
 // having run.
 extern "C" void load() {
     Logger.info("bs-android-editor load() starting");
+
+    // Plain filesystem work, no il2cpp needed - done first and
+    // unconditionally so the folder genuinely exists before the player
+    // ever opens the editor screen, rather than only being created
+    // lazily the first time "New Blank Map" is clicked (which meant a
+    // file dropped in beforehand could land in a folder that didn't
+    // exist yet).
+    try {
+        const auto importDir = bs_editor::hooks::GetImportAudioDirectory();
+        Logger.info("Import-audio folder ready at {}", importDir.string());
+    } catch (const std::exception& e) {
+        Logger.error("Failed to set up the import-audio folder: {}", e.what());
+    }
+
     il2cpp_functions::Init();
     Logger.info("il2cpp_functions::Init() complete");
 
