@@ -66,168 +66,53 @@ future `qpm restore` resolves yet another set, re-verify the same way
 you're about to call).
 
 **`qpm.json`'s `versionRange: "*"` for beatsaber-hook/custom-types/bsml/
-paper2_scotland2/scotland2/songcore** is permissive on purpose (worked
-around an unrelated resolver error early on) and, despite looking sloppy,
-is confirmed NOT to be the cause of a real launch crash it was twice
-suspected of and "fixed" for: tested against a headset whose installed
-versions of all five (beatsaber-hook 6.4.2, bsml 0.4.55, custom-types
-0.18.4, paper2_scotland2 4.8.0, songcore 1.1.26) matched exactly what this
-repo compiles against, byte for byte — zero version mismatch anywhere —
-and the crash still happened. Both a version-tightening attempt and an
-`additionalData.includeQmod: false` attempt on `songcore` were tried and
-reverted here; **neither was the actual bug**, they were chasing a false
-lead created by a separate, unrelated problem: GitHub Actions always wraps
-a downloaded workflow artifact in an outer zip, so every `.qmod` fetched
-via a CI artifact link (as opposed to a direct file transfer) needs that
-outer zip extracted first — importing the outer wrapper into MBF fails
-with a generic "mod had no mod.json manifest" error that looks exactly
-like a dependency-resolution failure but has nothing to do with any
-dependency. If you hit "failed to import"/"agent responded with an error"
-in MBF, extract-and-check for a nested `.qmod` before suspecting anything
-in this file.
+paper2_scotland2/scotland2** is permissive on purpose (worked around an
+unrelated resolver error early on) — confirmed harmless (see below).
 
-The launch crash itself — reproducible, present with every dependency
-version matching exactly, and with no log line at all from this mod (not
-even `setup()`'s first one) — went through several rounds of static
-analysis. Three theories were checked and **ruled out**:
-
-- `custom_types::MakeDelegate`'s delegate-wrapper template carries a
-  `static inline` type-registration member that looked like it could run
-  unconditionally at `.so` load regardless of whether the delegate-creating
-  function is ever called — but bsml's own `BSML::Lite::CreateUIButton`
-  (0.4.55) uses the exact same `custom_types::MakeDelegate` machinery for
-  every button's `onClick`, and that obviously doesn't crash every BSML mod
-  on load, so this was a dead end.
-- The `songcore` dependency's mere presence in `mod.json` (see above) —
-  already ruled out as the cause of the *import* failure, separately from
-  the launch crash.
-- `GameplayHooks.cpp`'s `VRController::Update` hook running its
-  `self->get_node()` caching unconditionally on every frame, not just while
-  an editor session is active — this looked like a strong lead (it's the
-  earliest, most frequent thing this mod's code does after launch) and was
-  fixed (that hook is now correctly gated, since it should be regardless),
-  but a direct diff against the last build confirmed present in a report
-  where the game *did* launch successfully (see below) showed this exact
-  code, completely unchanged, already there and already running every
-  frame in that working build. So gating it was a real correctness fix,
-  just not the fix for this crash.
-
-That last diff was the actually useful step: comparing the commit behind
-the report "New Blank Map does nothing" (`979ee59` — a build that
-definitely launched, reached the main menu, opened this mod's own screen,
-and had a button clicked on it) against the commit that introduced
-SongCore/OVRInput/the scene transition in one large batch (`0e65516` —
-the first build ever reported to crash) narrows the cause to *something in
-that diff*, and rules out anything unchanged between them.
-`MenuHooks.cpp` doesn't appear in that diff at all, and
-`GameplayHooks.cpp`'s only real change was the new OVRInput block (already
-gated behind `EditorSession::IsActive()`, unreachable before any menu
-interaction). Every other changed file (`EditorController`,
-`EditorSession`, `BeatmapSerializer`, `EditorLauncher.*`,
-`EditorViewController`'s song list) is likewise only reachable from a
-button click on a screen that requires the main menu to exist first — and
-the crash happens before the main menu ever appears. That leaves exactly
-one structural difference between the two builds capable of running
-before any of our own code does: `qpm.json` gaining a real `songcore`
-dependency, i.e. `libbs-android-editor.so` linking against
-`libsongcore.so` for the first time.
-
-To test that directly, this build **temporarily removes the `songcore`
-dependency entirely** (`qpm.json`) along with everything that requires
-it — `src/Hooks/EditorLauncher.{hpp,cpp}` deleted outright, and
-`EditorViewController`'s song-list population and "New Blank
-Map"/"Edit Selected" click handlers stubbed to just log instead of
-touching SongCore. The main-menu button, the screen, and its buttons still
-work; they just don't do anything real yet. If this build reaches the
-main menu without crashing, that conclusively confirms the `songcore`
-linkage itself (not anything this mod's own code does with it) as the
-cause, and the SongCore integration gets reintroduced with that
-specifically in mind (an alternate mod-loading order, a different way to
-resolve levels, etc.). If it *still* crashes with `songcore` fully removed,
-that's equally useful — it rules out SongCore entirely and points back at
-something more fundamental (`load()`/`setup()` in `main.cpp`, or the
-dynamic linker/static-init behavior of this `.so` in general) that
-whatever's left in the git history isn't ruling out any further.
-
-`load()` in `src/main.cpp` and the main-menu button injection in
-`MenuHooks.cpp` still have the try/catch + step-by-step logging added
-alongside the `VRController_Update` fix — that's harmless, real hardening
-either way, and gives a finer-grained log trail if this diagnostic build
-still crashes. If it does, the next real lead is an actual native crash
-log (a tombstone, `adb logcat` around the crash, or equivalent) rather
-than more static analysis or bisection.
-
-**Confirmed on a real headset: this diagnostic build launches all the way
-to the main menu.** That conclusively isolates the cause to the `songcore`
-dependency itself — specifically to `libbs-android-editor.so` linking
-against `libsongcore.so` at all, since nothing this mod's own code does
-with SongCore's API runs before the main menu even in the crashing build.
-
-The next test (currently live in this branch): `qpm.json` has `songcore`
-back as a real dependency again, but **no source file includes any
-SongCore header or calls any SongCore symbol** — `EditorLauncher.*` stay
-deleted, `EditorViewController` stays stubbed. `extern.cmake` links every
-non-header-only declared dependency's `.so` into the target regardless of
-whether any of our code actually references it, so this isolates "does
-merely linking `libsongcore.so` reproduce the crash" from "does it take
-an actual SongCore call." Two possible outcomes once tested:
-- **Crashes again with zero SongCore code**: the problem is purely at the
-  linking/loading level — most likely scotland2's mod load order (does it
-  actually load `libsongcore.so` before ours, given `songcore` appears as
-  a real dependency in this project's generated `mod.json`?) rather than
-  anything about calling SongCore's API.
-- **Launches fine**: the crash needs an actual call into SongCore, which
-  narrows it to specifically what `EditorLauncher.cpp`/`RefreshSongList()`
-  called — `GetAllLevels()`, `GetCharacteristicBySerializedName()`, or
-  reading fields directly off `CustomBeatmapLevel*` (`customLevelPath`,
-  `songName`, `levelID`) despite matching header content between the
-  linked and installed SongCore versions.
-
-This mod is not going back to the `979ee59` baseline permanently — this
-section gets replaced with the actual fix once that split is confirmed,
-not left as a standing limitation.
-
-**Confirmed on a real headset: crashes again with zero SongCore code
-calling anything.** So the problem really is at the linking/loading
-level, not any specific API call. Comparing SongCore v1.1.26's own
-`qpm.json` against how a real, popular SongCore-dependent mod
+**Launch crash, root cause and fix (resolved):** early builds crashed the
+whole game on launch, before the main menu ever appeared, as soon as this
+mod linked against SongCore. Dependency-version mismatches, `mod.json`
+packaging, and a couple of specific-looking static-initializer theories
+were all checked and ruled out with hard evidence (exact version matches
+confirmed on a real headset via MBF's installed-mods list; a clean CI
+link with no undefined symbols; a diagnostic build that dropped the
+`songcore` dependency entirely reached the main menu fine; a follow-up
+build that re-added `songcore` as a dependency with **zero code** calling
+into it crashed again, proving the problem was below the API level,
+purely at linking/loading). The actual cause: SongCore v1.1.26 needs three
+**private** transitive libraries to link — `lapiz ^0.2.21`, `kaleb
+^0.1.9`, `libcryptopp ^8.5.0`. `qpm restore` fetches these for this
+project's own build too, so the `.so` links cleanly, but qpm's packaging
+logic only bundles a dependency's `.so` into this mod's `.qmod` when it's
+**directly** listed in *this* project's own `qpm.json` (see `package.rs`'s
+`to_mod_json`, specifically the `direct_dependencies.contains(...)`
+filter on `libraryFiles`) — a dependency pulled in only transitively
+through `songcore` doesn't qualify, regardless of whether the compiled
+`.so` needs it at runtime. A real, popular SongCore-dependent mod
 ([BetterSongSearchQuest](https://github.com/bsq-ports/BetterSongSearchQuest))
-declares its own dependencies turned up the likely cause: SongCore
-declares three **private** transitive dependencies — `lapiz ^0.2.21`,
-`kaleb ^0.1.9`, `libcryptopp ^8.5.0` — needed to actually link
-`libsongcore.so`. `qpm restore` fetches all three for *this* project's
-build too (confirmed via the CI log: the link is clean, no undefined
-symbols), but qpm's own packaging logic (`to_mod_json` in the `qpm-rs`
-CLI's `package.rs`) only bundles a dependency's `.so` as a `libraryFile`
-if it's **directly** listed in *this* project's own `qpm.json` — a
-dependency pulled in only transitively through `songcore` doesn't
-qualify, regardless of whether this mod's own compiled code ends up
-needing it at runtime. BetterSongSearchQuest works around exactly this by
-also directly declaring `kaleb` itself (with `private: true`, since it
-doesn't use its API, just needs the `.so` bundled) — this project never
-did that for any of `lapiz`/`kaleb`/`libcryptopp`.
+works around exactly this by also directly declaring `kaleb` itself
+(`private: true`, since it doesn't use kaleb's API, just needs the `.so`
+bundled) — this project never did that for `lapiz`/`kaleb`/`libcryptopp`.
+All three are now direct dependencies here too, matching SongCore
+1.1.26's exact version ranges, and this was confirmed on a real headset to
+fix the crash.
 
-Whether this alone fixes the launch crash or the real cause turns out to
-be something else (mod load order, a genuine ABI conflict), all three are
-now added to `qpm.json` as direct dependencies (matching SongCore
-v1.1.26's exact version ranges) since it's correct, standard practice
-either way — this project's own `.qmod` shouldn't rely on another mod
-happening to have already deposited a compatible copy of a private
-library it also needs.
+Separately, and unrelated to the crash: `MenuHooks.cpp`'s main-menu button
+injection and `main.cpp`'s `load()` both got try/catch + step-by-step
+logging, and `EditorFlowCoordinator` got a `BackButtonWasPressed`
+override it was missing (it showed a back button that didn't actually do
+anything — every `HMUI::FlowCoordinator` is expected to override this and
+dismiss itself, confirmed against bsml 0.4.55's own
+`MainMenuHolderFlowCoordinator`). Both were found and fixed in the course
+of the same round of real-headset testing.
 
-**This is a temporary diagnostic build, not a design change** — the
-SongCore-backed song list and scene transition come back once the fix is
-known; `git log` has the exact commit that stripped `songcore` out if you
-need to see precisely what was removed.
+If you hit "failed to import"/"agent responded with an error" in MBF
+importing a `.qmod` fetched from a CI artifact link: GitHub Actions always
+wraps a downloaded workflow artifact in an outer zip, and importing that
+outer wrapper produces exactly this generic-sounding error. Extract the
+outer zip and import the `.qmod` file inside it, not the wrapper itself.
 
 ### Song selection and the gameplay-scene transition
-
-**Currently disabled** — as of the diagnostic build described above,
-`songcore` isn't a dependency at all and `src/Hooks/EditorLauncher.*` don't
-exist in the tree, to isolate the launch crash. The description below is
-of the real design and will apply again once SongCore is reintroduced
-(either unchanged, if the crash turns out to be unrelated to it, or
-adjusted based on whatever the isolation test finds).
 
 "New Blank Map"/"Edit Selected" resolve the picked song via
 [SongCore](https://github.com/raineaeternal/Quest-SongCore) (pinned in

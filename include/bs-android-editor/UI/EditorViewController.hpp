@@ -25,17 +25,17 @@
 //     click/selection handlers below also need DECLARE_INSTANCE_METHOD,
 //     not just a plain C++ member function.
 //
-// DIAGNOSTIC BUILD: the SongCore-backed song list and the
-// StartStandardLevel scene transition (src/Hooks/EditorLauncher.*) are
-// temporarily removed here, along with the `songcore` dependency in
-// qpm.json, to isolate a reproducible pre-main-menu launch crash - see the
-// README's crash-investigation section for the reasoning. This is meant to
-// be reverted (git revert) once that's confirmed one way or the other, not
-// a permanent design change.
+// Song list is populated from SongCore::API::Loading::GetAllLevels() (the
+// real, verified public API for "every custom level SongCore has loaded" -
+// see songcore/shared/SongCore.hpp) every time this screen activates, not
+// just the first time, so newly-added songs show up without a mod restart.
 #include "custom-types/shared/macros.hpp"
+
+#include <vector>
 
 #include "HMUI/TableView.hpp"
 #include "HMUI/ViewController.hpp"
+#include "songcore/shared/SongLoader/CustomBeatmapLevel.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 
 DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewController) {
@@ -55,4 +55,9 @@ DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewControlle
 
   public:
     int selectedSongIndex = -1;
+
+  private:
+    void RefreshSongList();
+
+    std::vector<SongCore::SongLoader::CustomBeatmapLevel*> levels_;
 };
