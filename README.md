@@ -66,33 +66,43 @@ future `qpm restore` resolves yet another set, re-verify the same way
 you're about to call).
 
 **`qpm.json`'s `versionRange: "*"` for beatsaber-hook/custom-types/bsml/
-paper2_scotland2/scotland2** is permissive on purpose (worked around an
-unrelated resolver error early on) and, despite looking sloppy, turned out
-NOT to be the cause of a real problem it was suspected of: a launch crash
-with zero log output, tested against a headset whose installed versions
-of all four (beatsaber-hook 6.4.2, bsml 0.4.55, custom-types 0.18.4,
-paper2_scotland2 4.8.0) matched exactly what this repo compiles against
-anyway. Tightening these to `^<resolved version>` didn't fix that crash
-and broke something else (see below), so it's back to `"*"` here.
+paper2_scotland2/scotland2/songcore** is permissive on purpose (worked
+around an unrelated resolver error early on) and, despite looking sloppy,
+is confirmed NOT to be the cause of a real launch crash it was twice
+suspected of and "fixed" for: tested against a headset whose installed
+versions of all five (beatsaber-hook 6.4.2, bsml 0.4.55, custom-types
+0.18.4, paper2_scotland2 4.8.0, songcore 1.1.26) matched exactly what this
+repo compiles against, byte for byte — zero version mismatch anywhere —
+and the crash still happened. Both a version-tightening attempt and an
+`additionalData.includeQmod: false` attempt on `songcore` were tried and
+reverted here; **neither was the actual bug**, they were chasing a false
+lead created by a separate, unrelated problem: GitHub Actions always wraps
+a downloaded workflow artifact in an outer zip, so every `.qmod` fetched
+via a CI artifact link (as opposed to a direct file transfer) needs that
+outer zip extracted first — importing the outer wrapper into MBF fails
+with a generic "mod had no mod.json manifest" error that looks exactly
+like a dependency-resolution failure but has nothing to do with any
+dependency. If you hit "failed to import"/"agent responded with an error"
+in MBF, extract-and-check for a nested `.qmod` before suspecting anything
+in this file.
 
-**`songcore`'s `additionalData.includeQmod: false`** is the one dependency
-flag in this file that *is* load-bearing, and non-obviously so: without
-it, `qpm qmod zip`-generated `mod.json` includes a `songcore` entry in its
-`dependencies` array, and — isolated by testing four separate builds
-against a real headset (two different `songcore` version-range strings,
-one identical to the other, plus a build with no `songcore` reference at
-all) — every `.qmod` with that entry present consistently failed to even
-*import* into MBF at all ("Agent responded with an error", no further
-detail available), regardless of the version string used, while the one
-build without it imported fine. The underlying cause (something in how
-MBF resolves `songcore`'s own nested dependency chain against this mod's,
-a bug in MBF, or something else) isn't confirmed — this just routes
-around it the same way `scotland2` already had to be routed around,
-trading away this installer's ability to auto-install SongCore for anyone
-who doesn't already have it (document that as a manual prerequisite until
-this gets root-caused properly). The `.so` still links against and calls
-`libsongcore.so` identically either way; this flag only controls whether
-`mod.json` *declares* it as a fetchable dependency.
+The launch crash itself — reproducible, present with every dependency
+version matching exactly, and with no log line at all from this mod (not
+even `setup()`'s first one) — is still unresolved as of this paragraph.
+That last detail is the important one: it means the crash happens at or
+before `load()` even starts running, which rules out anything gated
+behind a button click (the SongCore-backed song list, the
+`StartStandardLevel` scene transition) as the direct cause, since none of
+that executes until well after the main menu is already up. The remaining
+suspects are `setup()`/`load()` in `src/main.cpp` (unchanged in the batch
+that introduced this crash) and whatever runs automatically when this
+`.so` is loaded — its C++ static initializers (the `custom-types`
+`DEFINE_TYPE` registration objects for `EditorViewController`/
+`EditorFlowCoordinator`, both present since before this crash started, so
+not a new suspect either) or the dynamic linker resolving this `.so`'s
+newly added `libsongcore.so` dependency. None of these has been confirmed
+yet — the next real lead needs an actual native crash log (a tombstone,
+`adb logcat` around the crash, or equivalent), not more static analysis.
 
 ### Song selection and the gameplay-scene transition
 
