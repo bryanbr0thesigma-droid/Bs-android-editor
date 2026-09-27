@@ -65,6 +65,21 @@ future `qpm restore` resolves yet another set, re-verify the same way
 (their `shared/` headers are plain text — grep them for the class/macro
 you're about to call).
 
+**`qpm.json`'s `versionRange` for these pins the real thing, not `"*"`.**
+An earlier pass used `"*"` for beatsaber-hook/custom-types/bsml/
+paper2_scotland2/scotland2 to get past an unrelated resolver error, and
+that turned out to be a real bug, not a harmless placeholder: `qpm`
+copies each dependency's `versionRange` straight into the generated
+`mod.json`, so `"*"` told QuestPatcher/MBF "any version works" — even
+though this `.so` is compiled against one exact ABI per dependency and
+crashes on launch (with no log at all — it fails during the dynamic
+linker's symbol resolution, before this mod's own logger ever runs) if a
+*different* version of any of them is what's actually present on the
+headset, e.g. from another installed mod. Pin these to `^<the version
+qpm restore actually resolves>`, same as `bs-cordl`/`songcore` already
+were, so the installer can catch a real incompatibility up front instead
+of the game crashing silently.
+
 ### Song selection and the gameplay-scene transition
 
 "New Blank Map"/"Edit Selected" resolve the picked song via
