@@ -61,13 +61,23 @@ bool g_previousRightTriggerDown = false;
 
 } // namespace
 
-// VRController is a per-hand MonoBehaviour that already runs every frame;
-// piggybacking on its Update() to cache each hand's instance avoids the
-// extra custom-types boilerplate a brand-new MonoBehaviour would need (see
-// the note in the previous version of this file), same rationale as
-// hooking AudioTimeSyncController::Update below.
+// VRController is a per-hand MonoBehaviour that already runs every frame -
+// including every frame the game is running at all, menus included, long
+// before any editor session starts. Piggybacking on its Update() to cache
+// each hand's instance avoids the extra custom-types boilerplate a
+// brand-new MonoBehaviour would need (see the note in the previous version
+// of this file), same rationale as hooking AudioTimeSyncController::Update
+// below - but unlike that hook, this one used to touch self->get_node()
+// unconditionally on every single frame from the moment the hook was
+// installed, not just while editing. Gating it behind IsActive() (like
+// every other new code path added this session already is) means this
+// hook's body is a no-op except while a session is actually open, which
+// both matches the actual intent and shrinks the window where any bug in
+// this new code could run to just the feature it supports.
 MAKE_HOOK_MATCH(VRController_Update, &VRController::Update, void, VRController* self) {
     VRController_Update(self);
+
+    if (!bs_editor::EditorSession::Instance().IsActive()) return;
 
     if (self->get_node() == UnityEngine::XR::XRNode::LeftHand) {
         g_leftController = self;

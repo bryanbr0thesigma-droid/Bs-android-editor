@@ -88,21 +88,46 @@ in this file.
 
 The launch crash itself — reproducible, present with every dependency
 version matching exactly, and with no log line at all from this mod (not
-even `setup()`'s first one) — is still unresolved as of this paragraph.
-That last detail is the important one: it means the crash happens at or
-before `load()` even starts running, which rules out anything gated
-behind a button click (the SongCore-backed song list, the
-`StartStandardLevel` scene transition) as the direct cause, since none of
-that executes until well after the main menu is already up. The remaining
-suspects are `setup()`/`load()` in `src/main.cpp` (unchanged in the batch
-that introduced this crash) and whatever runs automatically when this
-`.so` is loaded — its C++ static initializers (the `custom-types`
-`DEFINE_TYPE` registration objects for `EditorViewController`/
-`EditorFlowCoordinator`, both present since before this crash started, so
-not a new suspect either) or the dynamic linker resolving this `.so`'s
-newly added `libsongcore.so` dependency. None of these has been confirmed
-yet — the next real lead needs an actual native crash log (a tombstone,
-`adb logcat` around the crash, or equivalent), not more static analysis.
+even `setup()`'s first one) — went through a round of static analysis
+before landing on the fix below. Two early theories were checked and
+**ruled out**: `custom_types::MakeDelegate`'s delegate-wrapper template
+carries a `static inline` type-registration member that looked like it
+could run unconditionally at `.so` load regardless of whether the
+delegate-creating function is ever called — but bsml's own
+`BSML::Lite::CreateUIButton` (0.4.55) uses the exact same
+`custom_types::MakeDelegate` machinery for every button's `onClick`, and
+that obviously doesn't crash every BSML mod on load, so this was a dead
+end. Likewise the `songcore` dependency's mere presence in `mod.json`
+(see above) was already ruled out.
+
+The actual gap turned out to be in `src/Hooks/GameplayHooks.cpp`: the
+`VRController::Update` hook was assumed (in an earlier pass over this
+file) to only matter during an active editor session, same as the
+`AudioTimeSyncController::Update` hook right below it — but its body
+was **not** actually gated on `EditorSession::IsActive()`. `VRController`
+tracks each hand continuously any time the game is running at all, main
+menu included, so that hook's `self->get_node()` call was running
+unconditionally on every frame from the moment `load()` installed it —
+by far the earliest and most frequent thing this mod's own code did
+after launch, well before the main menu button (the next-earliest
+candidate) even has a chance to render. That workload has now been
+brought in line with every other new code path this session added: the
+hook still caches each hand's `VRController*` for the gameplay-frame
+bridge to use, but only while `EditorSession::Instance().IsActive()` is
+true, so it's a no-op unless a session is actually open.
+
+Alongside that fix, `load()` in `src/main.cpp` now wraps each
+`InstallMenuHooks()`/`InstallGameplayHooks()` call in its own try/catch
+with logging before and after, and the main-menu button injection in
+`MenuHooks.cpp` does the same around `BSML::Lite::CreateUIButton`. Neither
+of those can stop an actual native (SIGSEGV-class) crash — only a thrown
+C++ exception — but they mean a metadata-resolution failure on an
+unexpected game build now produces a logged error and a mod that keeps
+running instead of a silent whole-game crash, and they leave a much
+finer-grained log trail if something upstream of `load()` still turns out
+to be the real cause. If the crash persists after this fix, the next real
+lead is an actual native crash log (a tombstone, `adb logcat` around the
+crash, or equivalent) rather than more static analysis.
 
 ### Song selection and the gameplay-scene transition
 

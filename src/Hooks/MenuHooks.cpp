@@ -22,6 +22,8 @@
 #include "GlobalNamespace/MainMenuViewController.hpp"
 #include "UnityEngine/Vector2.hpp"
 
+#include <exception>
+
 using namespace GlobalNamespace;
 
 MAKE_HOOK_MATCH(MainMenuViewController_DidActivate, &MainMenuViewController::DidActivate, void,
@@ -31,8 +33,24 @@ MAKE_HOOK_MATCH(MainMenuViewController_DidActivate, &MainMenuViewController::Did
 
     if (!firstActivation) return;
 
-    BSML::Lite::CreateUIButton(self->get_transform(), "Map Editor", UnityEngine::Vector2(-14.0f, -32.0f),
-                                [] { bs_editor::ui::PresentEditorFlow(); });
+    // This runs the moment the main menu first appears, with no user
+    // interaction - which makes it the first (and, on a stock main menu,
+    // only) place our own code runs unprompted every single time the game
+    // is opened. A try/catch here can't do anything about a hard native
+    // crash, but it does mean a thrown C++ exception (e.g. from a metadata
+    // lookup failing) gets logged instead of silently taking the whole
+    // game down with it, and the log line either side pins down whether we
+    // got this far at all.
+    Logger.info("MainMenuViewController_DidActivate: adding Map Editor button");
+    try {
+        BSML::Lite::CreateUIButton(self->get_transform(), "Map Editor", UnityEngine::Vector2(-14.0f, -32.0f),
+                                    [] { bs_editor::ui::PresentEditorFlow(); });
+        Logger.info("MainMenuViewController_DidActivate: Map Editor button added");
+    } catch (const std::exception& e) {
+        Logger.error("MainMenuViewController_DidActivate: failed to add Map Editor button: {}", e.what());
+    } catch (...) {
+        Logger.error("MainMenuViewController_DidActivate: failed to add Map Editor button: unknown exception");
+    }
 }
 
 namespace bs_editor::hooks {

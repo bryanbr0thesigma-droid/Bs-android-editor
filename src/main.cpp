@@ -18,6 +18,8 @@
 #include "beatsaber-hook/shared/utils/il2cpp-functions.hpp"
 #include "scotland2/shared/modloader.h"
 
+#include <exception>
+
 extern "C" void setup(CModInfo* info) {
     info->id = MOD_ID;
     info->version = VERSION;
@@ -25,11 +27,35 @@ extern "C" void setup(CModInfo* info) {
     Logger.info("bs-android-editor setup complete");
 }
 
+// Each install call is wrapped separately so a metadata-resolution failure
+// in one hook (e.g. from an unexpected game build) gets logged and skips
+// just that hook, rather than throwing out of load() uncaught and taking
+// the whole game process down with it before any of this ever reaches a
+// log file - which is what an unguarded failure here would otherwise look
+// like from the outside: a crash with no trace of bs-android-editor ever
+// having run.
 extern "C" void load() {
+    Logger.info("bs-android-editor load() starting");
     il2cpp_functions::Init();
+    Logger.info("il2cpp_functions::Init() complete");
 
-    Logger.info("Installing bs-android-editor hooks...");
-    bs_editor::hooks::InstallMenuHooks();
-    bs_editor::hooks::InstallGameplayHooks();
-    Logger.info("bs-android-editor hooks installed");
+    try {
+        bs_editor::hooks::InstallMenuHooks();
+        Logger.info("InstallMenuHooks() complete");
+    } catch (const std::exception& e) {
+        Logger.error("InstallMenuHooks() threw: {}", e.what());
+    } catch (...) {
+        Logger.error("InstallMenuHooks() threw an unknown exception");
+    }
+
+    try {
+        bs_editor::hooks::InstallGameplayHooks();
+        Logger.info("InstallGameplayHooks() complete");
+    } catch (const std::exception& e) {
+        Logger.error("InstallGameplayHooks() threw: {}", e.what());
+    } catch (...) {
+        Logger.error("InstallGameplayHooks() threw an unknown exception");
+    }
+
+    Logger.info("bs-android-editor load() finished");
 }
