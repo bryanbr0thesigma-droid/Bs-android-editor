@@ -56,6 +56,27 @@
       "id": "songcore",
       "versionRange": "^1.1.24",
       "additionalData": {}
+    },
+    {
+      "id": "lapiz",
+      "versionRange": "^0.2.21",
+      "additionalData": {
+        "private": true
+      }
+    },
+    {
+      "id": "kaleb",
+      "versionRange": "^0.1.9",
+      "additionalData": {
+        "private": true
+      }
+    },
+    {
+      "id": "libcryptopp",
+      "versionRange": "^8.5.0",
+      "additionalData": {
+        "private": true
+      }
     }
   ]
 }

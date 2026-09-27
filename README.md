@@ -187,6 +187,34 @@ This mod is not going back to the `979ee59` baseline permanently — this
 section gets replaced with the actual fix once that split is confirmed,
 not left as a standing limitation.
 
+**Confirmed on a real headset: crashes again with zero SongCore code
+calling anything.** So the problem really is at the linking/loading
+level, not any specific API call. Comparing SongCore v1.1.26's own
+`qpm.json` against how a real, popular SongCore-dependent mod
+([BetterSongSearchQuest](https://github.com/bsq-ports/BetterSongSearchQuest))
+declares its own dependencies turned up the likely cause: SongCore
+declares three **private** transitive dependencies — `lapiz ^0.2.21`,
+`kaleb ^0.1.9`, `libcryptopp ^8.5.0` — needed to actually link
+`libsongcore.so`. `qpm restore` fetches all three for *this* project's
+build too (confirmed via the CI log: the link is clean, no undefined
+symbols), but qpm's own packaging logic (`to_mod_json` in the `qpm-rs`
+CLI's `package.rs`) only bundles a dependency's `.so` as a `libraryFile`
+if it's **directly** listed in *this* project's own `qpm.json` — a
+dependency pulled in only transitively through `songcore` doesn't
+qualify, regardless of whether this mod's own compiled code ends up
+needing it at runtime. BetterSongSearchQuest works around exactly this by
+also directly declaring `kaleb` itself (with `private: true`, since it
+doesn't use its API, just needs the `.so` bundled) — this project never
+did that for any of `lapiz`/`kaleb`/`libcryptopp`.
+
+Whether this alone fixes the launch crash or the real cause turns out to
+be something else (mod load order, a genuine ABI conflict), all three are
+now added to `qpm.json` as direct dependencies (matching SongCore
+v1.1.26's exact version ranges) since it's correct, standard practice
+either way — this project's own `.qmod` shouldn't rely on another mod
+happening to have already deposited a compatible copy of a private
+library it also needs.
+
 **This is a temporary diagnostic build, not a design change** — the
 SongCore-backed song list and scene transition come back once the fix is
 known; `git log` has the exact commit that stripped `songcore` out if you
