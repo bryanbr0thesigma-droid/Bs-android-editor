@@ -51,11 +51,6 @@
       "id": "paper2_scotland2",
       "versionRange": "*",
       "additionalData": {}
-    },
-    {
-      "id": "songcore",
-      "versionRange": "^1.1.24",
-      "additionalData": {}
     }
   ]
 }

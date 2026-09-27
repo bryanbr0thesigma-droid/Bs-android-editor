@@ -88,48 +88,88 @@ in this file.
 
 The launch crash itself — reproducible, present with every dependency
 version matching exactly, and with no log line at all from this mod (not
-even `setup()`'s first one) — went through a round of static analysis
-before landing on the fix below. Two early theories were checked and
-**ruled out**: `custom_types::MakeDelegate`'s delegate-wrapper template
-carries a `static inline` type-registration member that looked like it
-could run unconditionally at `.so` load regardless of whether the
-delegate-creating function is ever called — but bsml's own
-`BSML::Lite::CreateUIButton` (0.4.55) uses the exact same
-`custom_types::MakeDelegate` machinery for every button's `onClick`, and
-that obviously doesn't crash every BSML mod on load, so this was a dead
-end. Likewise the `songcore` dependency's mere presence in `mod.json`
-(see above) was already ruled out.
+even `setup()`'s first one) — went through several rounds of static
+analysis. Three theories were checked and **ruled out**:
 
-The actual gap turned out to be in `src/Hooks/GameplayHooks.cpp`: the
-`VRController::Update` hook was assumed (in an earlier pass over this
-file) to only matter during an active editor session, same as the
-`AudioTimeSyncController::Update` hook right below it — but its body
-was **not** actually gated on `EditorSession::IsActive()`. `VRController`
-tracks each hand continuously any time the game is running at all, main
-menu included, so that hook's `self->get_node()` call was running
-unconditionally on every frame from the moment `load()` installed it —
-by far the earliest and most frequent thing this mod's own code did
-after launch, well before the main menu button (the next-earliest
-candidate) even has a chance to render. That workload has now been
-brought in line with every other new code path this session added: the
-hook still caches each hand's `VRController*` for the gameplay-frame
-bridge to use, but only while `EditorSession::Instance().IsActive()` is
-true, so it's a no-op unless a session is actually open.
+- `custom_types::MakeDelegate`'s delegate-wrapper template carries a
+  `static inline` type-registration member that looked like it could run
+  unconditionally at `.so` load regardless of whether the delegate-creating
+  function is ever called — but bsml's own `BSML::Lite::CreateUIButton`
+  (0.4.55) uses the exact same `custom_types::MakeDelegate` machinery for
+  every button's `onClick`, and that obviously doesn't crash every BSML mod
+  on load, so this was a dead end.
+- The `songcore` dependency's mere presence in `mod.json` (see above) —
+  already ruled out as the cause of the *import* failure, separately from
+  the launch crash.
+- `GameplayHooks.cpp`'s `VRController::Update` hook running its
+  `self->get_node()` caching unconditionally on every frame, not just while
+  an editor session is active — this looked like a strong lead (it's the
+  earliest, most frequent thing this mod's code does after launch) and was
+  fixed (that hook is now correctly gated, since it should be regardless),
+  but a direct diff against the last build confirmed present in a report
+  where the game *did* launch successfully (see below) showed this exact
+  code, completely unchanged, already there and already running every
+  frame in that working build. So gating it was a real correctness fix,
+  just not the fix for this crash.
 
-Alongside that fix, `load()` in `src/main.cpp` now wraps each
-`InstallMenuHooks()`/`InstallGameplayHooks()` call in its own try/catch
-with logging before and after, and the main-menu button injection in
-`MenuHooks.cpp` does the same around `BSML::Lite::CreateUIButton`. Neither
-of those can stop an actual native (SIGSEGV-class) crash — only a thrown
-C++ exception — but they mean a metadata-resolution failure on an
-unexpected game build now produces a logged error and a mod that keeps
-running instead of a silent whole-game crash, and they leave a much
-finer-grained log trail if something upstream of `load()` still turns out
-to be the real cause. If the crash persists after this fix, the next real
-lead is an actual native crash log (a tombstone, `adb logcat` around the
-crash, or equivalent) rather than more static analysis.
+That last diff was the actually useful step: comparing the commit behind
+the report "New Blank Map does nothing" (`979ee59` — a build that
+definitely launched, reached the main menu, opened this mod's own screen,
+and had a button clicked on it) against the commit that introduced
+SongCore/OVRInput/the scene transition in one large batch (`0e65516` —
+the first build ever reported to crash) narrows the cause to *something in
+that diff*, and rules out anything unchanged between them.
+`MenuHooks.cpp` doesn't appear in that diff at all, and
+`GameplayHooks.cpp`'s only real change was the new OVRInput block (already
+gated behind `EditorSession::IsActive()`, unreachable before any menu
+interaction). Every other changed file (`EditorController`,
+`EditorSession`, `BeatmapSerializer`, `EditorLauncher.*`,
+`EditorViewController`'s song list) is likewise only reachable from a
+button click on a screen that requires the main menu to exist first — and
+the crash happens before the main menu ever appears. That leaves exactly
+one structural difference between the two builds capable of running
+before any of our own code does: `qpm.json` gaining a real `songcore`
+dependency, i.e. `libbs-android-editor.so` linking against
+`libsongcore.so` for the first time.
+
+To test that directly, this build **temporarily removes the `songcore`
+dependency entirely** (`qpm.json`) along with everything that requires
+it — `src/Hooks/EditorLauncher.{hpp,cpp}` deleted outright, and
+`EditorViewController`'s song-list population and "New Blank
+Map"/"Edit Selected" click handlers stubbed to just log instead of
+touching SongCore. The main-menu button, the screen, and its buttons still
+work; they just don't do anything real yet. If this build reaches the
+main menu without crashing, that conclusively confirms the `songcore`
+linkage itself (not anything this mod's own code does with it) as the
+cause, and the SongCore integration gets reintroduced with that
+specifically in mind (an alternate mod-loading order, a different way to
+resolve levels, etc.). If it *still* crashes with `songcore` fully removed,
+that's equally useful — it rules out SongCore entirely and points back at
+something more fundamental (`load()`/`setup()` in `main.cpp`, or the
+dynamic linker/static-init behavior of this `.so` in general) that
+whatever's left in the git history isn't ruling out any further.
+
+`load()` in `src/main.cpp` and the main-menu button injection in
+`MenuHooks.cpp` still have the try/catch + step-by-step logging added
+alongside the `VRController_Update` fix — that's harmless, real hardening
+either way, and gives a finer-grained log trail if this diagnostic build
+still crashes. If it does, the next real lead is an actual native crash
+log (a tombstone, `adb logcat` around the crash, or equivalent) rather
+than more static analysis or bisection.
+
+**This is a temporary diagnostic build, not a design change** — once the
+result comes back, `git revert` the commit that stripped `songcore` out
+(or the equivalent files get restored by hand) and the real fix, once
+known, gets applied on top of the full feature set.
 
 ### Song selection and the gameplay-scene transition
+
+**Currently disabled** — as of the diagnostic build described above,
+`songcore` isn't a dependency at all and `src/Hooks/EditorLauncher.*` don't
+exist in the tree, to isolate the launch crash. The description below is
+of the real design and will apply again once SongCore is reintroduced
+(either unchanged, if the crash turns out to be unrelated to it, or
+adjusted based on whatever the isolation test finds).
 
 "New Blank Map"/"Edit Selected" resolve the picked song via
 [SongCore](https://github.com/raineaeternal/Quest-SongCore) (pinned in
@@ -141,10 +181,9 @@ and each entry is already a `GlobalNamespace::BeatmapLevel` subclass
 into the game's own level-start API with no conversion.
 
 **You need SongCore installed separately before installing this mod.**
-It's `includeQmod: false` in `qpm.json` (see the note above) so QuestPatcher/
-MBF won't auto-install it for you — install it yourself first the normal
-way (from its GitHub releases, or via your installer's own core-mods list
-if it offers SongCore there).
+It's a normal (not auto-installing) dependency in `qpm.json` — install it
+yourself first the normal way (from its GitHub releases, or via your
+installer's own core-mods list if it offers SongCore there).
 
 Both buttons always work on a **selected song's** "Standard"/"ExpertPlus"
 difficulty slot (creating that slot in `Info.dat` if it doesn't exist yet)

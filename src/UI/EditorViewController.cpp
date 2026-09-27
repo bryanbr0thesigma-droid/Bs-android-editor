@@ -1,9 +1,6 @@
 #include "bs-android-editor/UI/EditorViewController.hpp"
 #include "bs-android-editor/EditorSession.hpp"
-#include "bs-android-editor/Hooks/EditorLauncher.hpp"
 #include "bs-android-editor/main.hpp"
-
-#include "songcore/shared/SongCore.hpp"
 
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 #include "bsml/shared/BSML/Parsing/BSMLParser.hpp"
@@ -36,28 +33,22 @@ constexpr auto kEditorMainLayout = R"bsml(
 
 } // namespace
 
+// DIAGNOSTIC BUILD: song-list population (SongCore::API::Loading::
+// GetAllLevels()) and the StartStandardLevel scene transition are
+// temporarily stubbed out - see the note at the top of
+// EditorViewController.hpp and the README's crash-investigation section.
+// This screen still opens and its buttons still respond, they just don't
+// do anything real yet in this build.
 void EditorViewController::DidActivate(bool firstActivation, bool /*addedToHierarchy*/,
                                         bool /*screenSystemEnabling*/) {
     if (firstActivation) {
         BSML::BSMLParser::parse_and_construct(kEditorMainLayout, get_transform(), this);
     }
-    RefreshSongList();
-}
-
-void EditorViewController::RefreshSongList() {
-    levels_.clear();
-    for (auto* level : SongCore::API::Loading::GetAllLevels()) {
-        levels_.push_back(level);
-    }
     selectedSongIndex = -1;
-
-    if (songList == nullptr) return; // not parsed yet (shouldn't happen after firstActivation)
-
-    songList->data.clear();
-    for (auto* level : levels_) {
-        songList->data.push_back(BSML::CustomCellInfo::construct(level->songName));
+    if (songList != nullptr) {
+        songList->data.clear();
+        songList->tableView->ReloadData();
     }
-    songList->tableView->ReloadData();
 }
 
 void EditorViewController::OnSongSelected(HMUI::TableView* /*tableView*/, int index) {
@@ -65,18 +56,11 @@ void EditorViewController::OnSongSelected(HMUI::TableView* /*tableView*/, int in
 }
 
 void EditorViewController::OnNewBlankMapClicked() {
-    if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(levels_.size())) {
-        Logger.info("OnNewBlankMapClicked: select a song first (New Blank Map still needs an existing song's "
-                    "audio - see README, song import isn't implemented yet)");
-        return;
-    }
-    bs_editor::hooks::StartEditingLevel(levels_[selectedSongIndex], /*blank=*/true);
+    Logger.info("OnNewBlankMapClicked: disabled in this diagnostic build (SongCore integration removed to "
+                "isolate the launch crash - see README)");
 }
 
 void EditorViewController::OnEditSelectedClicked() {
-    if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(levels_.size())) {
-        Logger.info("OnEditSelectedClicked: no song selected");
-        return;
-    }
-    bs_editor::hooks::StartEditingLevel(levels_[selectedSongIndex], /*blank=*/false);
+    Logger.info("OnEditSelectedClicked: disabled in this diagnostic build (SongCore integration removed to "
+                "isolate the launch crash - see README)");
 }
