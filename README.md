@@ -172,8 +172,13 @@ automatically.
 
 These are marked `TODO` at their exact location in the source:
 
-- **`mod.template.json`**: `author`, `packageVersion` (your exact Beat
-  Saber version string), and `coverImage` are placeholders.
+- **`mod.template.json`**: `author` is a placeholder. `packageVersion` is
+  already set to this repo's pinned target (`1.40.8_7379`) — change it if
+  you re-pin `bs-cordl` to a different game version. There's no
+  `coverImage` yet (it's optional — QuestPatcher just shows a default
+  icon without one); add one and a `"coverImage": "cover.png"` entry
+  (plus listing it in `qmodIncludeDirs`-searchable location) if you want
+  a custom one.
 - **`src/UI/EditorViewController.cpp`**: populating the song list from
   installed custom levels (the community-standard way is via SongCore's
   loaded-levels API) and the "start gameplay in editor mode" transition
