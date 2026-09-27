@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "bs-android-editor/Core/EditorDocument.hpp"
 #include "bs-android-editor/Core/GridMath.hpp"
 #include "bs-android-editor/Core/MapTypes.hpp"
+#include "bs-android-editor/Core/SongImport.hpp"
 #include "bs-android-editor/EditorController.hpp"
 #include "bs-android-editor/EditorSession.hpp"
 
@@ -376,6 +378,72 @@ void TestEditorSessionSave() {
     std::filesystem::remove_all(tempDir);
 }
 
+void TestSanitizeFolderName() {
+    Check(SanitizeFolderName("My Song") == "My Song", "spaces are left alone");
+    Check(SanitizeFolderName("A/B\\C:D*E?F\"G<H>I|J") == "A_B_C_D_E_F_G_H_I_J", "invalid characters become '_'");
+    Check(SanitizeFolderName("") == "New Song", "empty name falls back to a default");
+}
+
+void TestPickNewSongFolder() {
+    const auto root = std::filesystem::temp_directory_path() / "bs_editor_pick_folder_test";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+
+    const auto first = PickNewSongFolder(root, "My Song");
+    Check(first == root / "My Song", "first pick uses the plain sanitized name");
+
+    std::filesystem::create_directories(first);
+    const auto second = PickNewSongFolder(root, "My Song");
+    Check(second == root / "My Song (2)", "collision appends (2)");
+
+    std::filesystem::create_directories(second);
+    const auto third = PickNewSongFolder(root, "My Song");
+    Check(third == root / "My Song (3)", "second collision appends (3)");
+
+    std::filesystem::remove_all(root);
+}
+
+void TestCreateNewSongFiles() {
+    const auto tempDir = std::filesystem::temp_directory_path() / "bs_editor_create_new_song_test";
+    std::filesystem::remove_all(tempDir);
+    std::filesystem::create_directories(tempDir);
+
+    const auto audioFile = tempDir / "input.ogg";
+    { std::ofstream(audioFile.string(), std::ios::binary) << "fake ogg data"; }
+
+    const auto levelPath = tempDir / "level";
+    CreateNewSongFiles(levelPath, audioFile, "New Song Name", 140.0);
+
+    Check(std::filesystem::exists(levelPath / "song.egg"), "audio file is copied in as song.egg");
+    Check(std::filesystem::exists(levelPath / "Info.dat"), "Info.dat is written");
+
+    const SongInfo info = LoadSongInfoFile((levelPath / "Info.dat").string());
+    Check(info.songName == "New Song Name", "Info.dat has the given song name");
+    Check(info.beatsPerMinute == 140.0, "Info.dat has the given BPM");
+    Check(info.songFilename == "song.egg", "Info.dat points at the copied audio file");
+    Check(info.difficultyBeatmapSets.size() == 1 &&
+              info.difficultyBeatmapSets[0].beatmapCharacteristicName == "Standard" &&
+              info.difficultyBeatmapSets[0].difficultyBeatmaps.size() == 1 &&
+              info.difficultyBeatmapSets[0].difficultyBeatmaps[0].difficulty == "ExpertPlus",
+          "Info.dat names a blank Standard/ExpertPlus slot");
+
+    const std::string difficultyFilename = info.difficultyBeatmapSets[0].difficultyBeatmaps[0].beatmapFilename;
+    Check(std::filesystem::exists(levelPath / difficultyFilename), "the difficulty file itself is written");
+    const BeatmapDifficulty difficulty = LoadDifficultyFile((levelPath / difficultyFilename).string());
+    Check(difficulty.colorNotes.empty() && difficulty.bombNotes.empty() && difficulty.obstacles.empty(),
+          "the new difficulty file starts empty");
+
+    bool threw = false;
+    try {
+        CreateNewSongFiles(tempDir / "level2", tempDir / "does_not_exist.ogg", "Whatever", 120.0);
+    } catch (const BeatmapIOError&) {
+        threw = true;
+    }
+    Check(threw, "CreateNewSongFiles throws BeatmapIOError for a missing audio file");
+
+    std::filesystem::remove_all(tempDir);
+}
+
 int main() {
     TestGridRoundTrip();
     TestCutDirections();
@@ -389,6 +457,9 @@ int main() {
     TestPlaybackAndScrubbing();
     TestEditorSession();
     TestEditorSessionSave();
+    TestSanitizeFolderName();
+    TestPickNewSongFolder();
+    TestCreateNewSongFiles();
 
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;

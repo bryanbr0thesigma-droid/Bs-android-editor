@@ -29,14 +29,31 @@
 // real, verified public API for "every custom level SongCore has loaded" -
 // see songcore/shared/SongCore.hpp) every time this screen activates, not
 // just the first time, so newly-added songs show up without a mod restart.
+//
+// "New Blank Map" doubles as the entry point for creating a genuinely new
+// song (not just a new difficulty on an existing one): clicking it swaps
+// the same list over to show importable audio files instead (from
+// EditorLauncher's GetImportAudioDirectory()/ListImportableAudioFiles())
+// and reveals a BPM stepper + song-name field, created in code via
+// BSML::Lite::CreateIncrementSetting/CreateStringSetting (the same
+// programmatic-creation pattern MenuHooks.cpp already uses for the main
+// menu button) rather than BSML markup, since those helpers take a plain
+// std::function callback with no markup value-binding to get wrong.
+// "Edit Selected" becomes the confirm button while in this mode. Leaving
+// the screen (back button) and reopening resets back to the normal song
+// list - there's no separate "cancel" control.
 #include "custom-types/shared/macros.hpp"
 
+#include <filesystem>
+#include <string>
 #include <vector>
 
+#include "HMUI/InputFieldView.hpp"
 #include "HMUI/TableView.hpp"
 #include "HMUI/ViewController.hpp"
 #include "songcore/shared/SongLoader/CustomBeatmapLevel.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
+#include "bsml/shared/BSML/Components/Settings/IncrementSetting.hpp"
 
 DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewController) {
     DECLARE_OVERRIDE_METHOD_MATCH(void, DidActivate, &HMUI::ViewController::DidActivate, bool firstActivation,
@@ -58,6 +75,16 @@ DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewControlle
 
   private:
     void RefreshSongList();
+    void EnterImportMode();
+    void RefreshImportList();
+    void CreateImportControlsIfNeeded();
 
     std::vector<SongCore::SongLoader::CustomBeatmapLevel*> levels_;
+
+    bool importMode_ = false;
+    std::vector<std::filesystem::path> importFiles_;
+    double pendingBpm_ = 120.0;
+    std::string pendingSongName_;
+    BSML::IncrementSetting* bpmSetting_ = nullptr;
+    HMUI::InputFieldView* nameSetting_ = nullptr;
 };

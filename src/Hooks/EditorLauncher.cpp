@@ -1,5 +1,6 @@
 #include "bs-android-editor/Hooks/EditorLauncher.hpp"
 #include "bs-android-editor/Core/BeatmapSerializer.hpp"
+#include "bs-android-editor/Core/SongImport.hpp"
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
 
@@ -24,7 +25,11 @@
 #include "UnityEngine/Resources.hpp"
 #include "Zenject/DiContainer.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <functional>
+#include <system_error>
 
 using namespace GlobalNamespace;
 
@@ -33,6 +38,7 @@ namespace bs_editor::hooks {
 namespace {
 constexpr const char* kCharacteristic = "Standard";
 constexpr const char* kDifficulty = "ExpertPlus";
+constexpr const char* kImportAudioDirName = "/sdcard/ModData/com.beatgames.beatsaber/Mods/bs-android-editor/ImportAudio";
 } // namespace
 
 bool StartEditingLevel(SongCore::SongLoader::CustomBeatmapLevel* level, bool blank) {
@@ -137,6 +143,88 @@ bool StartEditingLevel(SongCore::SongLoader::CustomBeatmapLevel* level, bool bla
         /*levelRestartedCallback=*/nullptr, System::Nullable_1<RecordingToolManager_SetupData>());
 
     return true;
+}
+
+std::filesystem::path GetImportAudioDirectory() {
+    std::filesystem::path dir(kImportAudioDirName);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        Logger.error("GetImportAudioDirectory: couldn't create '{}': {}", dir.string(), ec.message());
+    }
+    return dir;
+}
+
+std::vector<std::filesystem::path> ListImportableAudioFiles() {
+    std::vector<std::filesystem::path> files;
+    const auto dir = GetImportAudioDirectory();
+
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    if (ec) {
+        Logger.error("ListImportableAudioFiles: failed to open '{}': {}", dir.string(), ec.message());
+        return files;
+    }
+
+    for (const auto& entry : it) {
+        if (!entry.is_regular_file()) continue;
+
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (ext == ".ogg" || ext == ".egg") {
+            files.push_back(entry.path());
+        }
+    }
+    return files;
+}
+
+namespace {
+
+struct PendingNewSong {
+    bool active = false;
+    std::shared_future<void> refreshFuture;
+    std::filesystem::path levelPath;
+};
+PendingNewSong g_pendingNewSong;
+
+} // namespace
+
+bool CreateNewSong(const std::filesystem::path& audioFile, const std::string& songName, double bpm) {
+    const std::filesystem::path root = SongCore::API::Loading::GetPreferredCustomLevelPath();
+    const std::filesystem::path levelPath = core::PickNewSongFolder(root, songName);
+
+    try {
+        core::CreateNewSongFiles(levelPath, audioFile, songName, bpm);
+    } catch (const core::BeatmapIOError& e) {
+        Logger.error("CreateNewSong: {}", e.what());
+        return false;
+    }
+
+    Logger.info("CreateNewSong: created '{}', asking SongCore to rescan", levelPath.string());
+    g_pendingNewSong.refreshFuture = SongCore::API::Loading::RefreshSongs(/*fullRefresh=*/false);
+    g_pendingNewSong.levelPath = levelPath;
+    g_pendingNewSong.active = true;
+    return true;
+}
+
+void PollPendingNewSong() {
+    if (!g_pendingNewSong.active) return;
+
+    if (g_pendingNewSong.refreshFuture.valid() &&
+        g_pendingNewSong.refreshFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        return; // still refreshing - check again next frame
+    }
+
+    g_pendingNewSong.active = false;
+
+    auto* level = SongCore::API::Loading::GetLevelByPath(g_pendingNewSong.levelPath);
+    if (level == nullptr) {
+        Logger.error("PollPendingNewSong: SongCore still doesn't know about '{}' after rescanning",
+                     g_pendingNewSong.levelPath.string());
+        return;
+    }
+
+    StartEditingLevel(level, /*blank=*/true);
 }
 
 } // namespace bs_editor::hooks

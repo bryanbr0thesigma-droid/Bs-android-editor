@@ -34,6 +34,7 @@
 //   - Left thumbstick click: save to disk
 #include "bs-android-editor/Hooks/GameplayHooks.hpp"
 #include "bs-android-editor/EditorSession.hpp"
+#include "bs-android-editor/Hooks/EditorLauncher.hpp"
 #include "bs-android-editor/main.hpp"
 
 #include "beatsaber-hook/shared/utils/hooking.hpp"
@@ -76,6 +77,12 @@ bool g_previousRightTriggerDown = false;
 // this new code could run to just the feature it supports.
 MAKE_HOOK_MATCH(VRController_Update, &VRController::Update, void, VRController* self) {
     VRController_Update(self);
+
+    // Cheap no-op check when nothing is pending; this is what actually
+    // finishes a CreateNewSong() call once SongCore's rescan completes,
+    // which by definition happens before any editor session exists yet -
+    // so this can't be gated behind IsActive() like the rest of this hook.
+    bs_editor::hooks::PollPendingNewSong();
 
     if (!bs_editor::EditorSession::Instance().IsActive()) return;
 

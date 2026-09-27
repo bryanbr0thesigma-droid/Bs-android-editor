@@ -128,14 +128,48 @@ It's a normal (not auto-installing) dependency in `qpm.json` — install it
 yourself first the normal way (from its GitHub releases, or via your
 installer's own core-mods list if it offers SongCore there).
 
-Both buttons always work on a **selected song's** "Standard"/"ExpertPlus"
-difficulty slot (creating that slot in `Info.dat` if it doesn't exist yet)
-— "New Blank Map" starts that slot from an empty difficulty instead of
-loading whatever's already saved there, it does not create a new song from
-nothing. That's a direct consequence of song import not being implemented
-yet (see the bottom of this file): a new song folder with no audio file
-would never load, so there's currently no way to create a map for
-audio that isn't already an installed custom level's.
+**"Edit Selected"** works on a selected **existing** song's
+"Standard"/"ExpertPlus" difficulty slot (creating that slot in `Info.dat`
+if it doesn't exist yet), loading whatever's already saved there.
+
+**"New Blank Map"** is the entry point for a genuinely new song, not a new
+difficulty on an existing one (an earlier version of this button did the
+latter — the first real-headset test of it made clear that wasn't what
+"New Blank Map" should mean). Clicking it swaps the same list over to show
+audio files instead of installed songs — specifically, `.ogg`/`.egg` files
+sitting in
+`/sdcard/ModData/com.beatgames.beatsaber/Mods/bs-android-editor/ImportAudio/`
+(created automatically the first time this mod runs, so it's there to drop
+files into via MBF/file transfer even before you ever click the button;
+re-clicking "New Blank Map" while already in this mode just rescans that
+folder). A song-name field and a BPM stepper appear too — both created in
+C++ via `BSML::Lite::CreateStringSetting`/`CreateIncrementSetting`
+(`EditorViewController.cpp`), not BSML markup, since those helpers take a
+plain callback with no markup value-binding to get wrong; their exact
+on-screen position is a first guess, not something measured against a
+running game, so nudge the anchored positions there if they land somewhere
+awkward. Only `.ogg`/`.egg` are accepted because Beat Saber's own
+custom-level audio loading expects Ogg Vorbis data — an `.egg` file is
+just an Ogg Vorbis file under a different extension, by convention, so an
+`.mp3`/`.wav` dropped in that folder won't play right even though nothing
+stops you from renaming one; convert it to Ogg Vorbis first (outside this
+mod) if that's what you're starting from.
+
+Selecting a file and clicking **"Edit Selected"** (now acting as the
+import-confirm button while in this mode — the label doesn't change, this
+isn't wired up yet) copies that file into a new folder under SongCore's
+own preferred custom-level path as `song.egg`, writes a fresh `Info.dat`
+and an empty difficulty file for it, asks SongCore to rescan
+(`SongCore::API::Loading::RefreshSongs`), and — once that finishes, polled
+non-blockingly once a frame rather than blocked on synchronously, since
+`RefreshSongs`'s own doc comment implies its completion is meant to be
+observed via an event/future rather than waited on — starts editing the
+new level the same way "Edit Selected" on an existing song does. There's
+no on-screen progress indicator for that wait yet, just a delay before the
+scene changes (`src/Hooks/EditorLauncher.cpp`'s `CreateNewSong`/
+`PollPendingNewSong`). Leaving this screen (back button) and reopening it
+always resets back to the normal existing-song list — that's the only way
+out of import mode right now, there's no separate cancel button.
 
 `src/Hooks/EditorLauncher.cpp` is the piece that actually switches into the
 real VR gameplay scene (the same one `GameplayHooks.cpp`'s
@@ -165,8 +199,22 @@ things about *how* it gets there are worth knowing if it misbehaves:
 This is the one part of the whole mod that couldn't be exercised at all
 before landing — there's no way to run IL2CPP call sites outside a real
 game process. Every signature was checked against the real bs-cordl
-4008.0.0 headers, but treat your first real-headset test of "New Blank
-Map"/"Edit Selected" as the actual test, not this having compiled in CI.
+4008.0.0 headers, but treat your first real-headset test of "Edit
+Selected" on an existing song's existing difficulty (the closest thing to
+a controlled test of `StartStandardLevel` itself, without also depending
+on a difficulty slot or brand new song folder actually being valid) as the
+actual test, not this having compiled in CI. The first real attempt at
+this (via the old "New Blank Map" behavior, editing a blank difficulty
+that didn't already exist for that song) froze briefly then did nothing —
+consistent with `StartStandardLevel` silently rejecting a
+characteristic/difficulty combination SongCore's own live model of that
+level didn't actually have, since the difficulty slot only existed in this
+mod's own in-memory copy of `Info.dat`, never written to disk or told to
+SongCore. Both "Edit Selected" on an existing difficulty and the new
+"New Blank Map" import flow (which does write to disk and does tell
+SongCore, via `RefreshSongs`, before attempting the transition) are meant
+to avoid that specific failure — neither has been confirmed on a real
+headset yet as of this paragraph.
 
 ## Repo layout
 
@@ -341,7 +389,9 @@ missing): partial-height walls, arcs/chains, full lighting choreography
 (only basic on/off/flash events), multi-select/box-select, a
 difficulty-slot picker (everything currently targets a single fixed
 "Standard"/"ExpertPlus" slot — see the difficulty parameter hardcoded in
-`EditorLauncher.cpp`), Android audio file import with transcoding to Ogg
-Vorbis (which is also what's blocking "New Blank Map" from creating a
-genuinely new song — see above), and a decorations/prop-placement mode
-with grab-to-transform — ask for any of these next.
+`EditorLauncher.cpp`), audio transcoding on import (see "New Blank Map"
+above — only `.ogg`/`.egg` are accepted, anything else needs converting to
+Ogg Vorbis outside this mod first), an on-screen progress indicator for
+the SongCore-rescan delay after importing a new song, and a
+decorations/prop-placement mode with grab-to-transform — ask for any of
+these next.

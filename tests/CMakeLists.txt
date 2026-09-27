@@ -18,6 +18,7 @@ add_executable(bs_editor_core_tests
     ${BS_EDITOR_ROOT}/src/Core/GridMath.cpp
     ${BS_EDITOR_ROOT}/src/Core/BeatmapSerializer.cpp
     ${BS_EDITOR_ROOT}/src/Core/EditorDocument.cpp
+    ${BS_EDITOR_ROOT}/src/Core/SongImport.cpp
     ${BS_EDITOR_ROOT}/src/EditorController.cpp
     ${BS_EDITOR_ROOT}/src/EditorSession.cpp
     test_main.cpp

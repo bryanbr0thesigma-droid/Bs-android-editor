@@ -5,8 +5,12 @@
 
 #include "songcore/shared/SongCore.hpp"
 
+#include "bsml/shared/BSML-Lite/Creation/Settings.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 #include "bsml/shared/BSML/Parsing/BSMLParser.hpp"
+
+#include "UnityEngine/GameObject.hpp"
+#include "UnityEngine/Vector2.hpp"
 
 DEFINE_TYPE(BSAndroidEditor, EditorViewController);
 
@@ -41,6 +45,12 @@ void EditorViewController::DidActivate(bool firstActivation, bool /*addedToHiera
     if (firstActivation) {
         BSML::BSMLParser::parse_and_construct(kEditorMainLayout, get_transform(), this);
     }
+    // Reopening this screen (even just via the back button) always resets
+    // back to the normal "edit an existing song" list - see the header
+    // comment for why that's the only way out of import mode.
+    importMode_ = false;
+    if (bpmSetting_ != nullptr) bpmSetting_->get_gameObject()->SetActive(false);
+    if (nameSetting_ != nullptr) nameSetting_->get_gameObject()->SetActive(false);
     RefreshSongList();
 }
 
@@ -60,20 +70,77 @@ void EditorViewController::RefreshSongList() {
     songList->tableView->ReloadData();
 }
 
+void EditorViewController::CreateImportControlsIfNeeded() {
+    if (bpmSetting_ != nullptr) return; // already created, just toggled active/inactive from here on
+
+    // Parented directly to this screen's own transform, same as the main
+    // menu button in MenuHooks.cpp - these end up as siblings of the
+    // parsed <vertical> layout above, not children of it, positioned by
+    // their own anchoredPosition. The values below are a first guess, not
+    // measured against a running game; nudge them if they land somewhere
+    // awkward.
+    nameSetting_ = BSML::Lite::CreateStringSetting(get_transform(), "Song Name", "", UnityEngine::Vector2(0, -20),
+                                                    [this](StringW value) { pendingSongName_ = std::string(value); });
+    bpmSetting_ = BSML::Lite::CreateIncrementSetting(get_transform(), "BPM", /*decimals=*/1, /*increment=*/1.0f,
+                                                      /*currentValue=*/static_cast<float>(pendingBpm_),
+                                                      /*minValue=*/40.0f, /*maxValue=*/400.0f,
+                                                      UnityEngine::Vector2(0, -35),
+                                                      [this](float value) { pendingBpm_ = value; });
+}
+
+void EditorViewController::EnterImportMode() {
+    if (!importMode_) {
+        importMode_ = true;
+        pendingSongName_.clear();
+        pendingBpm_ = 120.0;
+    }
+    CreateImportControlsIfNeeded();
+    bpmSetting_->get_gameObject()->SetActive(true);
+    nameSetting_->get_gameObject()->SetActive(true);
+    RefreshImportList();
+}
+
+void EditorViewController::RefreshImportList() {
+    importFiles_ = bs_editor::hooks::ListImportableAudioFiles();
+    selectedSongIndex = -1;
+
+    if (songList == nullptr) return;
+
+    songList->data.clear();
+    for (const auto& file : importFiles_) {
+        songList->data.push_back(BSML::CustomCellInfo::construct(file.filename().string()));
+    }
+    songList->tableView->ReloadData();
+
+    Logger.info("RefreshImportList: found {} importable audio file(s) in {}", importFiles_.size(),
+                bs_editor::hooks::GetImportAudioDirectory().string());
+}
+
 void EditorViewController::OnSongSelected(HMUI::TableView* /*tableView*/, int index) {
     selectedSongIndex = index;
 }
 
 void EditorViewController::OnNewBlankMapClicked() {
-    if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(levels_.size())) {
-        Logger.info("OnNewBlankMapClicked: select a song first (New Blank Map still needs an existing song's "
-                    "audio - see README, song import isn't implemented yet)");
-        return;
-    }
-    bs_editor::hooks::StartEditingLevel(levels_[selectedSongIndex], /*blank=*/true);
+    // Re-clicking while already in import mode just rescans the import
+    // folder, so dropping in a new file doesn't need leaving this screen.
+    EnterImportMode();
 }
 
 void EditorViewController::OnEditSelectedClicked() {
+    if (importMode_) {
+        if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(importFiles_.size())) {
+            Logger.info("OnEditSelectedClicked: select an audio file first");
+            return;
+        }
+
+        const auto& audioFile = importFiles_[selectedSongIndex];
+        std::string songName = pendingSongName_.empty() ? audioFile.stem().string() : pendingSongName_;
+        Logger.info("OnEditSelectedClicked: importing '{}' as '{}' at {} BPM", audioFile.string(), songName,
+                    pendingBpm_);
+        bs_editor::hooks::CreateNewSong(audioFile, songName, pendingBpm_);
+        return;
+    }
+
     if (selectedSongIndex < 0 || selectedSongIndex >= static_cast<int>(levels_.size())) {
         Logger.info("OnEditSelectedClicked: no song selected");
         return;
