@@ -41,12 +41,22 @@ public:
     void SetTool(EditorTool tool) { tool_ = tool; }
     EditorTool tool() const { return tool_; }
 
+    // Cycles Note -> Bomb -> Obstacle -> Event -> Delete -> Note ... . The
+    // VR-facing control mapping uses this instead of a menu so switching
+    // what the trigger places doesn't require leaving the editing view.
+    void CycleTool();
+
     void SetActiveColor(core::NoteColor color) { activeColor_ = color; }
     core::NoteColor activeColor() const { return activeColor_; }
+    void CycleActiveColor() { activeColor_ = activeColor_ == core::NoteColor::Red ? core::NoteColor::Blue : core::NoteColor::Red; }
 
     void SetActiveEventType(int eventType) { activeEventType_ = eventType; }
     void SetSnapSubdivision(int subdivision) { snapSubdivision_ = subdivision; }
     int snapSubdivision() const { return snapSubdivision_; }
+
+    // Cycles through a fixed set of common snap subdivisions (1/4, 1/8,
+    // 1/16, 1/32, back to 1/4 ...).
+    void CycleSnapSubdivision();
 
     // Rebuilds the beat<->time conversion from the document's current
     // bpmEvents. Call after loading a document or editing bpmEvents.

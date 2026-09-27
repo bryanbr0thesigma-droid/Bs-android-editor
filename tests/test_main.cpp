@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -124,6 +125,35 @@ void TestSongInfoRoundTrip() {
     Check(reparsed.extras["_customData"]["note"] == "keep me", "round trip keeps Info.dat customData");
 }
 
+void TestFindOrAddDifficultySlot() {
+    SongInfo info;
+    DifficultyBeatmapSet standardSet;
+    standardSet.beatmapCharacteristicName = "Standard";
+    DifficultyBeatmap hard;
+    hard.difficulty = "Hard";
+    hard.beatmapFilename = "Hard.dat";
+    standardSet.difficultyBeatmaps.push_back(hard);
+    info.difficultyBeatmapSets.push_back(standardSet);
+
+    DifficultyBeatmap& existing = FindOrAddDifficultySlot(info, "Standard", "Hard");
+    Check(&existing == &info.difficultyBeatmapSets[0].difficultyBeatmaps[0],
+          "FindOrAddDifficultySlot returns the existing entry rather than duplicating it");
+    Check(info.difficultyBeatmapSets.size() == 1 && info.difficultyBeatmapSets[0].difficultyBeatmaps.size() == 1,
+          "no new set/entry created for an existing slot");
+
+    DifficultyBeatmap& newInSameSet = FindOrAddDifficultySlot(info, "Standard", "ExpertPlus");
+    Check(info.difficultyBeatmapSets.size() == 1, "new difficulty in an existing characteristic reuses the set");
+    Check(info.difficultyBeatmapSets[0].difficultyBeatmaps.size() == 2, "new difficulty entry appended");
+    Check(newInSameSet.difficulty == "ExpertPlus" && newInSameSet.beatmapFilename == "ExpertPlusStandard.dat",
+          "new entry gets a sensible default filename");
+    Check(newInSameSet.difficultyRank == 9, "new ExpertPlus entry gets rank 9");
+
+    DifficultyBeatmap& newSet = FindOrAddDifficultySlot(info, "OneSaber", "Easy");
+    Check(info.difficultyBeatmapSets.size() == 2, "a new characteristic creates a new set");
+    Check(newSet.difficulty == "Easy" && newSet.beatmapFilename == "EasyOneSaber.dat",
+          "new set's entry also gets a sensible default filename");
+}
+
 void TestEditorDocumentUndoRedo() {
     EditorDocument doc;
 
@@ -212,6 +242,46 @@ void TestEditorController() {
     Check(doc.difficulty().colorNotes.empty(), "delete tool removed the nearest note");
 }
 
+void TestToolColorSnapCycling() {
+    EditorDocument doc;
+    EditorController controller(doc, /*baseBpm=*/120.0, /*snapSubdivision=*/4);
+
+    controller.SetTool(EditorTool::Note);
+    controller.CycleTool();
+    Check(controller.tool() == EditorTool::Bomb, "CycleTool: Note -> Bomb");
+    controller.CycleTool();
+    Check(controller.tool() == EditorTool::Obstacle, "CycleTool: Bomb -> Obstacle");
+    controller.CycleTool();
+    Check(controller.tool() == EditorTool::Event, "CycleTool: Obstacle -> Event");
+    controller.CycleTool();
+    Check(controller.tool() == EditorTool::Delete, "CycleTool: Event -> Delete");
+    controller.CycleTool();
+    Check(controller.tool() == EditorTool::Note, "CycleTool wraps Delete -> Note");
+
+    controller.SetActiveColor(NoteColor::Red);
+    controller.CycleActiveColor();
+    Check(controller.activeColor() == NoteColor::Blue, "CycleActiveColor: Red -> Blue");
+    controller.CycleActiveColor();
+    Check(controller.activeColor() == NoteColor::Red, "CycleActiveColor: Blue -> Red");
+
+    controller.SetSnapSubdivision(4);
+    controller.CycleSnapSubdivision();
+    Check(controller.snapSubdivision() == 8, "CycleSnapSubdivision: 4 -> 8");
+    controller.CycleSnapSubdivision();
+    Check(controller.snapSubdivision() == 16, "CycleSnapSubdivision: 8 -> 16");
+    controller.CycleSnapSubdivision();
+    Check(controller.snapSubdivision() == 32, "CycleSnapSubdivision: 16 -> 32");
+    controller.CycleSnapSubdivision();
+    Check(controller.snapSubdivision() == 4, "CycleSnapSubdivision wraps 32 -> 4");
+
+    // Starting from an off-cycle value should snap onto the cycle rather
+    // than getting stuck (defensive: nothing currently sets snapSubdivision
+    // to a non-cycle value, but the wrap logic shouldn't assume otherwise).
+    controller.SetSnapSubdivision(3);
+    controller.CycleSnapSubdivision();
+    Check(controller.snapSubdivision() == 8, "CycleSnapSubdivision recovers from an off-cycle value");
+}
+
 void TestPlaybackAndScrubbing() {
     EditorDocument doc;
     EditorController controller(doc, /*baseBpm=*/120.0, /*snapSubdivision=*/4);
@@ -264,16 +334,61 @@ void TestEditorSession() {
     Check(session.document() == nullptr && session.controller() == nullptr, "End releases document and controller");
 }
 
+void TestEditorSessionSave() {
+    EditorSession& session = EditorSession::Instance();
+
+    Check(!session.Save(), "Save() on an inactive session is a no-op");
+
+    SongInfo info;
+    info.songName = "Save Test";
+    BeatmapDifficulty difficulty;
+    difficulty.bpmEvents.push_back(BpmEvent{0.0, 128.0});
+    session.Start(info, difficulty, /*baseBpm=*/128.0);
+    Check(!session.Save(), "Save() with no difficultyPath given to Start() is a no-op");
+    session.End();
+
+    const auto tempDir = std::filesystem::temp_directory_path() / "bs_editor_session_save_test";
+    std::filesystem::create_directories(tempDir);
+    const auto infoPath = (tempDir / "Info.dat").string();
+    const auto difficultyPath = (tempDir / "ExpertPlusStandard.dat").string();
+    std::filesystem::remove(infoPath);
+    std::filesystem::remove(difficultyPath);
+
+    session.Start(info, difficulty, 128.0, /*snapSubdivision=*/8, infoPath, difficultyPath);
+    Check(session.difficultyFilePath() == difficultyPath, "session remembers the difficulty save path");
+
+    ColorNote note;
+    note.b = 4.0;
+    note.x = 1;
+    note.y = 0;
+    session.document()->AddColorNote(note);
+
+    Check(session.Save(), "Save() succeeds once paths are set");
+    Check(std::filesystem::exists(infoPath), "Save() writes Info.dat");
+    Check(std::filesystem::exists(difficultyPath), "Save() writes the difficulty file");
+
+    const BeatmapDifficulty reloaded = LoadDifficultyFile(difficultyPath);
+    Check(reloaded.colorNotes.size() == 1, "saved difficulty round-trips the note that was added");
+    const SongInfo reloadedInfo = LoadSongInfoFile(infoPath);
+    Check(reloadedInfo.songName == "Save Test", "saved Info.dat round-trips the song name");
+
+    session.End();
+    std::filesystem::remove_all(tempDir);
+}
+
 int main() {
     TestGridRoundTrip();
     TestCutDirections();
     TestBeatTimeConversion();
     TestSerializerRoundTrip();
     TestSongInfoRoundTrip();
+    TestFindOrAddDifficultySlot();
     TestEditorDocumentUndoRedo();
     TestEditorController();
+    TestToolColorSnapCycling();
     TestPlaybackAndScrubbing();
     TestEditorSession();
+    TestEditorSessionSave();
 
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;

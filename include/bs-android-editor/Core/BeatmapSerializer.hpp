@@ -28,4 +28,12 @@ std::string SerializeSongInfo(const SongInfo& info, int indent = 2);
 SongInfo LoadSongInfoFile(const std::string& path);
 void SaveSongInfoFile(const std::string& path, const SongInfo& info);
 
+// Finds the difficulty-beatmap entry for (characteristic, difficulty)
+// within info.difficultyBeatmapSets, appending a new set and/or entry
+// (defaulting beatmapFilename to "<difficulty><characteristic>.dat") if
+// one doesn't already exist. Used when starting an edit for a song that
+// doesn't have this difficulty slot yet.
+DifficultyBeatmap& FindOrAddDifficultySlot(SongInfo& info, const std::string& characteristic,
+                                           const std::string& difficulty);
+
 } // namespace bs_editor::core

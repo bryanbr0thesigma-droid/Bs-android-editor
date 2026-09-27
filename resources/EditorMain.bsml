@@ -24,6 +24,6 @@
 
   <horizontal pad="2" spacing="2">
     <button text="New Blank Map" on-click="OnNewBlankMapClicked"/>
-    <button text="Edit Selected" id="edit-button" interactable="false" on-click="OnEditSelectedClicked"/>
+    <button text="Edit Selected" id="edit-button" on-click="OnEditSelectedClicked"/>
   </horizontal>
 </vertical>

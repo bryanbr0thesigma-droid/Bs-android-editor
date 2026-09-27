@@ -15,7 +15,7 @@ This repo is two things, verified to different degrees:
    read/write (round-trips unknown fields untouched), grid/beat-time math,
    playback/scrubbing, undo/redo, and the input-to-edit logic. This is
    plain C++17 with **zero** dependency on Beat Saber, IL2CPP, or Android,
-   and is proven by a real, passing test suite you can run right now (76
+   and is proven by a real, passing test suite you can run right now (104
    checks — see below).
 
 2. **`src/Hooks/`, `src/UI/`, `qpm.json`, `mod.template.json`, `CMakeLists.txt`**
@@ -65,6 +65,57 @@ future `qpm restore` resolves yet another set, re-verify the same way
 (their `shared/` headers are plain text — grep them for the class/macro
 you're about to call).
 
+### Song selection and the gameplay-scene transition
+
+"New Blank Map"/"Edit Selected" resolve the picked song via
+[SongCore](https://github.com/raineaeternal/Quest-SongCore) (pinned in
+`qpm.json` as `songcore: ^1.1.24`, the exact tag bumped for 1.40.8_7379,
+confirmed the same way as `bs-cordl` above) rather than reading the
+filesystem by hand: `SongCore::API::Loading::GetAllLevels()` for the list,
+and each entry is already a `GlobalNamespace::BeatmapLevel` subclass
+(`SongCore::SongLoader::CustomBeatmapLevel`), so it can be passed straight
+into the game's own level-start API with no conversion.
+
+Both buttons always work on a **selected song's** "Standard"/"ExpertPlus"
+difficulty slot (creating that slot in `Info.dat` if it doesn't exist yet)
+— "New Blank Map" starts that slot from an empty difficulty instead of
+loading whatever's already saved there, it does not create a new song from
+nothing. That's a direct consequence of song import not being implemented
+yet (see the bottom of this file): a new song folder with no audio file
+would never load, so there's currently no way to create a map for
+audio that isn't already an installed custom level's.
+
+`src/Hooks/EditorLauncher.cpp` is the piece that actually switches into the
+real VR gameplay scene (the same one `GameplayHooks.cpp`'s
+`VRController`/`AudioTimeSyncController` hooks already target) via
+`GlobalNamespace::MenuTransitionsHelper::StartStandardLevel` — by a wide
+margin the most complex single call in this codebase (19 parameters). Two
+things about *how* it gets there are worth knowing if it misbehaves:
+
+- `MenuTransitionsHelper` and the `EnvironmentsListModel` it needs are
+  fetched via `UnityEngine::Resources::FindObjectsOfTypeAll` rather than
+  through Zenject DI (which raw hooks like this can't easily reach into).
+  This is not a guess — BSML's own `ModSettingsFlowCoordinator` fetches
+  `MenuTransitionsHelper` the identical way in its real 0.4.55 source. The
+  `EnvironmentsListModel` comes off an existing
+  `SinglePlayerLevelSelectionFlowCoordinator`'s already-injected field
+  (verified field names against bs-cordl 4008.0.0's header). Both require
+  you to have opened Solo Play at least once already this game session —
+  that's when the game itself first creates them; there's currently no
+  fallback if you haven't.
+- Every other parameter (`GameplayModifiers`, `PlayerSpecificSettings`,
+  etc.) uses that type's own parameterless default constructor, and
+  `ColorScheme`/`OverrideEnvironmentSettings`/`PracticeSettings` are passed
+  as `nullptr` (meaning "no override" / "not practice mode") rather than
+  constructed, both to reduce the number of things that could be wrong and
+  because the game's own defaults are what you want here anyway.
+
+This is the one part of the whole mod that couldn't be exercised at all
+before landing — there's no way to run IL2CPP call sites outside a real
+game process. Every signature was checked against the real bs-cordl
+4008.0.0 headers, but treat your first real-headset test of "New Blank
+Map"/"Edit Selected" as the actual test, not this having compiled in CI.
+
 ## Repo layout
 
 ```
@@ -94,7 +145,8 @@ ctest --test-dir build-tests --output-on-failure
 This builds and exercises the actual editing engine: grid math, beat/time
 conversion under BPM changes, playback/scrub behavior, `.dat`/`Info.dat`
 round-tripping (including that fields this tool doesn't model, like arcs or
-light event box groups, survive a load+save unchanged), undo/redo, and the
+light event box groups, survive a load+save unchanged), undo/redo,
+tool/color/snap cycling, session save-to-disk, and the
 controller-input-to-edit pipeline (placing a note, dragging out a wall,
 deleting the nearest object).
 
@@ -179,12 +231,6 @@ These are marked `TODO` at their exact location in the source:
   icon without one); add one and a `"coverImage": "cover.png"` entry
   (plus listing it in `qmodIncludeDirs`-searchable location) if you want
   a custom one.
-- **`src/UI/EditorViewController.cpp`**: populating the song list from
-  installed custom levels (the community-standard way is via SongCore's
-  loaded-levels API) and the "start gameplay in editor mode" transition
-  (via `GlobalNamespace::MenuTransitionsHelper`, one of the classes that
-  reshapes most often across game updates — check its current constructor/
-  method overloads against your own `extern/includes`).
 - **`src/Hooks/GameplayHooks.cpp`**: the controller-to-grid mapping
   (`kGridOriginHeightMeters`) is a reasonable approximation, not the game's
   real play-space/grid transform — swap it in for pixel-perfect placement
@@ -200,27 +246,50 @@ major versions of these dependencies, re-verify the same way (their
 
 ## What the editor currently supports (engine layer)
 
-- Color notes (with 8-direction cut angle + dot notes), bombs, and
-  full-height walls, with undo/redo for every edit
+- Color notes (with 8-direction cut angle + dot notes), bombs, full-height
+  walls, and basic (on/off/flash) lighting events, with undo/redo for
+  every edit
 - Grid-snapped placement (4x3 grid) from controller position
-- Adjustable beat-snap subdivision (1/4, 1/8, 1/16, ...)
+- Adjustable beat-snap subdivision, cycled in-headset: 1/4, 1/8, 1/16, 1/32
 - BPM-change-aware beat↔seconds conversion
 - Playback and scrubbing: the editor owns its own playhead (play/pause,
   seek by a scrub axis) rather than trusting the game's own audio clock —
   see `EditorController::AdvanceTime`
 - Load/save that never destroys map data this editor doesn't model yet
-  (arcs, chains, light event box groups, `customData`, ...)
+  (arcs, chains, light event box groups, `customData`, ...) — `Save()`
+  writes both the difficulty file and `Info.dat` back to the paths the
+  session was started with
 
-In-headset control mapping (`src/Hooks/GameplayHooks.cpp`): right
-hand places/deletes/drags using its position, thumbstick angle (cut
-direction) and trigger; left hand's thumbstick scrubs the timeline and its
-trigger toggles play/pause, synced back into the game's own audio playback
-via `AudioTimeSyncController::Resume`/`Pause`/`SeekTo`.
+### In-headset controls (`src/Hooks/GameplayHooks.cpp`)
+
+Right hand places/deletes/drags using its position, thumbstick angle (cut
+direction) and trigger — mirrors the base game's saber hand for cutting
+notes. Left hand's thumbstick scrubs the timeline and its trigger toggles
+play/pause, synced back into the game's own audio playback via
+`AudioTimeSyncController::Resume`/`Pause`/`SeekTo`.
+
+Everything else (switching what the trigger places, undo/redo, save) is
+mapped to face buttons and thumbstick clicks — deliberately not gated
+behind any menu — via `GlobalNamespace::OVRInput` (Oculus Integration's own
+input API; still present and working in this bs-cordl dump, confirmed
+against its real `Get(Down)`/`OVRInput_Button`/`OVRInput_Controller`
+members, which `VRController` itself doesn't expose):
+
+| Button | Hand | Action |
+|---|---|---|
+| A (`One`) | Right | Cycle tool: Note → Bomb → Wall → Light → Delete → ... |
+| B (`Two`) | Right | Cycle active note color (Red/Blue) |
+| Thumbstick click | Right | Cycle beat-snap subdivision |
+| X (`Three`) | Left | Undo |
+| Y (`Four`) | Left | Redo |
+| Thumbstick click | Left | Save to disk |
 
 Not yet implemented (left as clear extension points, not silently
 missing): partial-height walls, arcs/chains, full lighting choreography
-(only basic on/off/flash events), multi-select/box-select, VR playtest
-transition (see TODO above), Android audio file import with transcoding to
-Ogg Vorbis, and a decorations/prop-placement mode with grab-to-transform —
-the last two were explicitly scoped out of this pass to get the base
-editor's native build compiling first; ask for them next.
+(only basic on/off/flash events), multi-select/box-select, a
+difficulty-slot picker (everything currently targets a single fixed
+"Standard"/"ExpertPlus" slot — see the difficulty parameter hardcoded in
+`EditorLauncher.cpp`), Android audio file import with transcoding to Ogg
+Vorbis (which is also what's blocking "New Blank Map" from creating a
+genuinely new song — see above), and a decorations/prop-placement mode
+with grab-to-transform — ask for any of these next.

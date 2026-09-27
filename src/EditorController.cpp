@@ -18,6 +18,8 @@ namespace {
 constexpr double kDeleteBeatTolerance = 0.25;
 constexpr float kScrubDeadzone = 0.15f;
 constexpr double kMaxScrubSecondsPerSecond = 6.0;
+constexpr int kSnapSubdivisionCycle[] = {4, 8, 16, 32};
+constexpr int kSnapSubdivisionCycleCount = sizeof(kSnapSubdivisionCycle) / sizeof(kSnapSubdivisionCycle[0]);
 }
 
 EditorController::EditorController(core::EditorDocument& document, double baseBpm, int snapSubdivision)
@@ -28,6 +30,27 @@ EditorController::EditorController(core::EditorDocument& document, double baseBp
 
 void EditorController::RefreshBpmTimeline() {
     timeConverter_ = BeatTimeConverter(baseBpm_, document_.difficulty().bpmEvents);
+}
+
+void EditorController::CycleTool() {
+    switch (tool_) {
+        case EditorTool::Note: tool_ = EditorTool::Bomb; break;
+        case EditorTool::Bomb: tool_ = EditorTool::Obstacle; break;
+        case EditorTool::Obstacle: tool_ = EditorTool::Event; break;
+        case EditorTool::Event: tool_ = EditorTool::Delete; break;
+        case EditorTool::Delete: tool_ = EditorTool::Note; break;
+    }
+}
+
+void EditorController::CycleSnapSubdivision() {
+    int index = 0;
+    for (int i = 0; i < kSnapSubdivisionCycleCount; ++i) {
+        if (kSnapSubdivisionCycle[i] == snapSubdivision_) {
+            index = i;
+            break;
+        }
+    }
+    snapSubdivision_ = kSnapSubdivisionCycle[(index + 1) % kSnapSubdivisionCycleCount];
 }
 
 EditorController::CursorPreview EditorController::PreviewAt(const ControllerFrame& frame) const {

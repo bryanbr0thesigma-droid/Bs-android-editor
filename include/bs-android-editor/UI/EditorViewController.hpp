@@ -24,10 +24,18 @@
 //     BSML::BSMLAction, which resolves a MethodInfo* by method name, so the
 //     click/selection handlers below also need DECLARE_INSTANCE_METHOD,
 //     not just a plain C++ member function.
+//
+// Song list is populated from SongCore::API::Loading::GetAllLevels() (the
+// real, verified public API for "every custom level SongCore has loaded" -
+// see songcore/shared/SongCore.hpp) every time this screen activates, not
+// just the first time, so newly-added songs show up without a mod restart.
 #include "custom-types/shared/macros.hpp"
+
+#include <vector>
 
 #include "HMUI/TableView.hpp"
 #include "HMUI/ViewController.hpp"
+#include "songcore/shared/SongLoader/CustomBeatmapLevel.hpp"
 #include "bsml/shared/BSML/Components/CustomListTableData.hpp"
 
 DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewController) {
@@ -47,4 +55,9 @@ DECLARE_CLASS_CODEGEN(BSAndroidEditor, EditorViewController, HMUI::ViewControlle
 
   public:
     int selectedSongIndex = -1;
+
+  private:
+    void RefreshSongList();
+
+    std::vector<SongCore::SongLoader::CustomBeatmapLevel*> levels_;
 };

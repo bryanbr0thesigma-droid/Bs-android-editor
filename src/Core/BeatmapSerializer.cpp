@@ -1,7 +1,10 @@
 #include "bs-android-editor/Core/BeatmapSerializer.hpp"
 
+#include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <sstream>
+#include <utility>
 
 #include "nlohmann/json.hpp"
 
@@ -290,6 +293,41 @@ SongInfo LoadSongInfoFile(const std::string& path) {
 
 void SaveSongInfoFile(const std::string& path, const SongInfo& info) {
     WriteFile(path, SerializeSongInfo(info));
+}
+
+namespace {
+int DefaultDifficultyRank(const std::string& difficulty) {
+    if (difficulty == "Easy") return 1;
+    if (difficulty == "Normal") return 3;
+    if (difficulty == "Hard") return 5;
+    if (difficulty == "Expert") return 7;
+    if (difficulty == "ExpertPlus") return 9;
+    return 3;
+}
+} // namespace
+
+DifficultyBeatmap& FindOrAddDifficultySlot(SongInfo& info, const std::string& characteristic,
+                                           const std::string& difficulty) {
+    auto setIt = std::find_if(info.difficultyBeatmapSets.begin(), info.difficultyBeatmapSets.end(),
+                               [&](const DifficultyBeatmapSet& set) { return set.beatmapCharacteristicName == characteristic; });
+    if (setIt == info.difficultyBeatmapSets.end()) {
+        DifficultyBeatmapSet newSet;
+        newSet.beatmapCharacteristicName = characteristic;
+        info.difficultyBeatmapSets.push_back(std::move(newSet));
+        setIt = std::prev(info.difficultyBeatmapSets.end());
+    }
+
+    auto diffIt = std::find_if(setIt->difficultyBeatmaps.begin(), setIt->difficultyBeatmaps.end(),
+                                [&](const DifficultyBeatmap& d) { return d.difficulty == difficulty; });
+    if (diffIt == setIt->difficultyBeatmaps.end()) {
+        DifficultyBeatmap newDiff;
+        newDiff.difficulty = difficulty;
+        newDiff.difficultyRank = DefaultDifficultyRank(difficulty);
+        newDiff.beatmapFilename = difficulty + characteristic + ".dat";
+        setIt->difficultyBeatmaps.push_back(std::move(newDiff));
+        diffIt = std::prev(setIt->difficultyBeatmaps.end());
+    }
+    return *diffIt;
 }
 
 } // namespace bs_editor::core

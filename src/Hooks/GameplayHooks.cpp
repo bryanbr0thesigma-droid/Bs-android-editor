@@ -19,7 +19,19 @@
 //
 // Control mapping: right hand places/deletes/drags (mirrors the base
 // game's saber hand for cutting notes); left hand's thumbstick X scrubs
-// the playhead and its trigger toggles play/pause.
+// the playhead and its trigger toggles play/pause. Face buttons and
+// thumbstick clicks (not exposed by VRController itself) come from
+// GlobalNamespace::OVRInput - Oculus Integration's own input API, still
+// present and working in this bs-cordl 4008.0.0 dump (confirmed via its
+// real Get/GetDown/GetUp(OVRInput_Button, OVRInput_Controller) methods and
+// OVRInput_Button's real member list, e.g. One/Two/Three/Four for the
+// A/B/X/Y buttons and Primary/SecondaryThumbstick for the stick clicks):
+//   - Right A (One): cycle placement tool (Note/Bomb/Wall/Light/Delete)
+//   - Right B (Two): cycle active note color
+//   - Right thumbstick click: cycle beat-snap subdivision
+//   - Left X (Three): undo
+//   - Left Y (Four): redo
+//   - Left thumbstick click: save to disk
 #include "bs-android-editor/Hooks/GameplayHooks.hpp"
 #include "bs-android-editor/EditorSession.hpp"
 #include "bs-android-editor/main.hpp"
@@ -27,6 +39,7 @@
 #include "beatsaber-hook/shared/utils/hooking.hpp"
 
 #include "GlobalNamespace/AudioTimeSyncController.hpp"
+#include "GlobalNamespace/OVRInput.hpp"
 #include "GlobalNamespace/VRController.hpp"
 #include "UnityEngine/Time.hpp"
 #include "UnityEngine/XR/XRNode.hpp"
@@ -99,6 +112,28 @@ MAKE_HOOK_MATCH(AudioTimeSyncController_Update, &AudioTimeSyncController::Update
     const double afterSeconds = controller->currentTimeSeconds();
     if (std::fabs(afterSeconds - beforeSeconds) > kResyncEpsilonSeconds) {
         self->SeekTo(static_cast<float>(afterSeconds));
+    }
+
+    if (OVRInput::GetDown(OVRInput_Button::Three, OVRInput_Controller::LTouch)) {
+        controller->Undo();
+    }
+    if (OVRInput::GetDown(OVRInput_Button::Four, OVRInput_Controller::LTouch)) {
+        controller->Redo();
+    }
+    if (OVRInput::GetDown(OVRInput_Button::SecondaryThumbstick, OVRInput_Controller::LTouch)) {
+        if (session.Save()) {
+            Logger.info("Saved to {}", session.difficultyFilePath());
+        }
+    }
+
+    if (OVRInput::GetDown(OVRInput_Button::One, OVRInput_Controller::RTouch)) {
+        controller->CycleTool();
+    }
+    if (OVRInput::GetDown(OVRInput_Button::Two, OVRInput_Controller::RTouch)) {
+        controller->CycleActiveColor();
+    }
+    if (OVRInput::GetDown(OVRInput_Button::PrimaryThumbstick, OVRInput_Controller::RTouch)) {
+        controller->CycleSnapSubdivision();
     }
 
     if (g_rightController != nullptr) {
